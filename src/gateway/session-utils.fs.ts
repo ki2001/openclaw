@@ -139,10 +139,34 @@ export function attachOpenClawTranscriptMeta(
   };
 }
 
+function stripBlockedOriginalContentMeta(message: unknown): unknown {
+  if (!message || typeof message !== "object" || Array.isArray(message)) {
+    return message;
+  }
+  const record = message as Record<string, unknown>;
+  const existing =
+    record.__openclaw && typeof record.__openclaw === "object" && !Array.isArray(record.__openclaw)
+      ? (record.__openclaw as Record<string, unknown>)
+      : null;
+  if (!existing || !("originalBlockedContent" in existing)) {
+    return message;
+  }
+  const { originalBlockedContent: _originalBlockedContent, ...remainingMeta } = existing;
+  return {
+    ...record,
+    __openclaw: remainingMeta,
+  };
+}
+
+type SessionMessageProjectionOptions = {
+  includeBlockedOriginalContent?: boolean;
+};
+
 export function readSessionMessages(
   sessionId: string,
   storePath: string | undefined,
   sessionFile?: string,
+  opts?: SessionMessageProjectionOptions,
 ): unknown[] {
   const candidates = resolveSessionTranscriptCandidates(sessionId, storePath, sessionFile);
 
@@ -151,20 +175,20 @@ export function readSessionMessages(
     return [];
   }
 
-  return transcriptRecordsToMessages(readSelectedTranscriptRecords(filePath));
+  return transcriptRecordsToMessages(readSelectedTranscriptRecords(filePath), opts);
 }
 
-export type ReadRecentSessionMessagesOptions = {
+export type ReadRecentSessionMessagesOptions = SessionMessageProjectionOptions & {
   maxMessages: number;
   maxBytes?: number;
   maxLines?: number;
 };
 
 export type ReadSessionMessagesAsyncOptions =
-  | {
+  | ({
       mode: "full";
       reason: string;
-    }
+    } & SessionMessageProjectionOptions)
   | ({
       mode: "recent";
     } & ReadRecentSessionMessagesOptions);
@@ -230,7 +254,7 @@ export function readRecentSessionMessages(
         .filter((line) => line.trim().length > 0)
         .slice(-maxLines);
 
-      return parseRecentTranscriptTailMessages(lines, maxMessages);
+      return parseRecentTranscriptTailMessages(lines, maxMessages, opts);
     }) ?? []
   );
 }
@@ -413,11 +437,14 @@ function readSelectedTranscriptRecords(filePath: string): TailTranscriptRecord[]
   }
 }
 
-function transcriptRecordsToMessages(records: TailTranscriptRecord[]): unknown[] {
+function transcriptRecordsToMessages(
+  records: TailTranscriptRecord[],
+  opts?: SessionMessageProjectionOptions,
+): unknown[] {
   const messages: unknown[] = [];
   let messageSeq = 0;
   for (const entry of records) {
-    const message = parsedSessionEntryToMessage(entry.record, messageSeq + 1);
+    const message = parsedSessionEntryToMessage(entry.record, messageSeq + 1, opts);
     if (message) {
       messageSeq += 1;
       messages.push(message);
@@ -426,12 +453,18 @@ function transcriptRecordsToMessages(records: TailTranscriptRecord[]): unknown[]
   return messages;
 }
 
-function parseRecentTranscriptTailMessages(lines: string[], maxMessages: number): unknown[] {
+function parseRecentTranscriptTailMessages(
+  lines: string[],
+  maxMessages: number,
+  opts?: SessionMessageProjectionOptions,
+): unknown[] {
   const entries = lines.flatMap((line) => {
     const entry = parseTailTranscriptRecord(line);
     return entry ? [entry] : [];
   });
-  return transcriptRecordsToMessages(selectActiveTranscriptRecords(entries)).slice(-maxMessages);
+  return transcriptRecordsToMessages(selectActiveTranscriptRecords(entries), opts).slice(
+    -maxMessages,
+  );
 }
 
 function visitTranscriptLines(filePath: string, visit: (line: string) => void): void {
@@ -551,7 +584,7 @@ export async function readSessionMessagesAsync(
     return [];
   }
   const index = await readSessionTranscriptIndex(filePath);
-  return index?.entries.flatMap((entry) => indexedTranscriptEntryToMessages(entry)) ?? [];
+  return index?.entries.flatMap((entry) => indexedTranscriptEntryToMessages(entry, opts)) ?? [];
 }
 
 export async function visitSessionMessagesAsync(
@@ -570,7 +603,7 @@ export async function visitSessionMessagesAsync(
     return 0;
   }
   for (const entry of index.entries) {
-    const message = indexedTranscriptEntryToMessage(entry);
+    const message = indexedTranscriptEntryToMessage(entry, opts);
     if (message) {
       visit(message, entry.seq);
     }
@@ -649,7 +682,7 @@ export async function readRecentSessionMessagesAsync(
     ...opts,
     maxMessages,
   });
-  return parseRecentTranscriptTailMessages(lines, maxMessages);
+  return parseRecentTranscriptTailMessages(lines, maxMessages, opts);
 }
 
 export async function readRecentSessionMessagesWithStatsAsync(
@@ -703,15 +736,35 @@ export function readRecentSessionTranscriptLines(params: {
   return { lines, totalLines };
 }
 
-function parsedSessionEntryToMessage(parsed: unknown, seq: number): unknown {
+function parsedSessionEntryToMessage(
+  parsed: unknown,
+  seq: number,
+  opts?: SessionMessageProjectionOptions,
+): unknown {
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
     return null;
   }
   const entry = parsed as Record<string, unknown>;
   if (entry.message) {
-    return attachOpenClawTranscriptMeta(entry.message, {
+    const originalBlockedContent =
+      opts?.includeBlockedOriginalContent === true &&
+      entry.originalBlockedContent &&
+      typeof entry.originalBlockedContent === "object" &&
+      !Array.isArray(entry.originalBlockedContent)
+        ? {
+            originalBlockedContent: {
+              content: (entry.originalBlockedContent as { content?: unknown }).content,
+            },
+          }
+        : {};
+    const projectedMessage =
+      opts?.includeBlockedOriginalContent === true
+        ? entry.message
+        : stripBlockedOriginalContentMeta(entry.message);
+    return attachOpenClawTranscriptMeta(projectedMessage, {
       ...(typeof entry.id === "string" ? { id: entry.id } : {}),
       seq,
+      ...originalBlockedContent,
     });
   }
 
@@ -734,12 +787,18 @@ function parsedSessionEntryToMessage(parsed: unknown, seq: number): unknown {
   return null;
 }
 
-function indexedTranscriptEntryToMessage(entry: IndexedTranscriptEntry): unknown {
-  return parsedSessionEntryToMessage(entry.record, entry.seq);
+function indexedTranscriptEntryToMessage(
+  entry: IndexedTranscriptEntry,
+  opts?: SessionMessageProjectionOptions,
+): unknown {
+  return parsedSessionEntryToMessage(entry.record, entry.seq, opts);
 }
 
-function indexedTranscriptEntryToMessages(entry: IndexedTranscriptEntry): unknown[] {
-  const message = indexedTranscriptEntryToMessage(entry);
+function indexedTranscriptEntryToMessages(
+  entry: IndexedTranscriptEntry,
+  opts?: SessionMessageProjectionOptions,
+): unknown[] {
+  const message = indexedTranscriptEntryToMessage(entry, opts);
   return message ? [message] : [];
 }
 
