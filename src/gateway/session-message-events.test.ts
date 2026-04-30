@@ -286,6 +286,51 @@ describe("session.message websocket events", () => {
     }
   });
 
+  test("strips blocked original content from live session.message events", async () => {
+    const storePath = await createSessionStoreFile();
+    await writeSessionStore({
+      entries: {
+        main: {
+          sessionId: "sess-main",
+          updatedAt: Date.now(),
+        },
+      },
+      storePath,
+    });
+    const transcriptPath = path.join(path.dirname(storePath), "sess-main.jsonl");
+    await fs.writeFile(
+      transcriptPath,
+      JSON.stringify({ type: "session", version: 1, id: "sess-main" }) + "\n",
+      "utf-8",
+    );
+
+    await withOperatorSessionSubscriber(async (ws) => {
+      const { messageEvent } = await emitTranscriptUpdateAndCollectEvents({
+        ws,
+        sessionKey: "agent:main:main",
+        sessionFile: transcriptPath,
+        messageId: "blocked-1",
+        message: {
+          role: "user",
+          content: [{ type: "text", text: "The agent cannot read this message." }],
+          __openclaw: {
+            originalBlockedContent: {
+              content: [{ type: "text", text: "secret blocked prompt" }],
+            },
+          },
+        },
+      });
+
+      const payload = messageEvent.payload as {
+        message?: { content?: unknown; __openclaw?: { originalBlockedContent?: unknown } };
+      };
+      expect(payload.message?.content).toEqual([
+        { type: "text", text: "The agent cannot read this message." },
+      ]);
+      expect(payload.message?.__openclaw?.originalBlockedContent).toBeUndefined();
+    });
+  });
+
   test("includes live usage metadata on session.message and sessions.changed transcript events", async () => {
     const storePath = await createSessionStoreFile();
     await writeSessionStore({

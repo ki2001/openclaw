@@ -288,4 +288,35 @@ describe("SessionHistorySseState", () => {
     ).toBeNull();
     expect(state.snapshot().messages).toHaveLength(1);
   });
+
+  test("strips blocked original content from inline SSE messages", () => {
+    const state = SessionHistorySseState.fromRawSnapshot({
+      target: { sessionId: "sess-main" },
+      rawMessages: [],
+    });
+
+    const appended = state.appendInlineMessage({
+      message: {
+        role: "user",
+        content: [{ type: "text", text: "The agent cannot read this message." }],
+        __openclaw: {
+          originalBlockedContent: {
+            content: [{ type: "text", text: "secret blocked prompt" }],
+          },
+        },
+      },
+      messageId: "blocked-1",
+    });
+
+    expect(
+      (
+        appended?.message as {
+          __openclaw?: { originalBlockedContent?: unknown };
+        }
+      ).__openclaw?.originalBlockedContent,
+    ).toBeUndefined();
+    expect(state.snapshot().messages[0]?.content).toEqual([
+      { type: "text", text: "The agent cannot read this message." },
+    ]);
+  });
 });

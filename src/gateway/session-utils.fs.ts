@@ -139,7 +139,7 @@ export function attachOpenClawTranscriptMeta(
   };
 }
 
-function stripBlockedOriginalContentMeta(message: unknown): unknown {
+export function stripBlockedOriginalContentMeta(message: unknown): unknown {
   if (!message || typeof message !== "object" || Array.isArray(message)) {
     return message;
   }

@@ -10,6 +10,7 @@ import {
 import { isAcpRuntimeSpawnAvailable } from "../../../acp/runtime/availability.js";
 import { filterHeartbeatPairs } from "../../../auto-reply/heartbeat-filter.js";
 import { getRuntimeConfig } from "../../../config/config.js";
+import { appendBlockedUserMessageToSessionTranscript } from "../../../config/sessions/transcript.js";
 import type { AssembleResult } from "../../../context-engine/types.js";
 import { emitTrustedDiagnosticEvent } from "../../../infra/diagnostic-events.js";
 import {
@@ -24,6 +25,7 @@ import { getMachineDisplayName } from "../../../infra/machine-name.js";
 import { MAX_IMAGE_BYTES } from "../../../media/constants.js";
 import { listRegisteredPluginAgentPromptGuidance } from "../../../plugins/command-registry-state.js";
 import { buildAgentHookContextChannelFields } from "../../../plugins/hook-agent-context.js";
+import { resolveBlockMessage } from "../../../plugins/hook-decision-types.js";
 import { getGlobalHookRunner } from "../../../plugins/hook-runner-global.js";
 import {
   extractModelCompat,
@@ -2518,7 +2520,7 @@ export async function runEmbeddedAttempt(
 
       const activeSessionManager = sessionManager;
       let preflightRecovery: EmbeddedRunAttemptResult["preflightRecovery"];
-      let promptErrorSource: "prompt" | "compaction" | "precheck" | null = null;
+      let promptErrorSource: EmbeddedRunAttemptResult["promptErrorSource"] = null;
       const handleMidTurnPrecheckRequest = (request: MidTurnPrecheckRequest) => {
         const logMidTurnPrecheck = (route: string, extra?: string) => {
           log.warn(
@@ -2787,6 +2789,11 @@ export async function runEmbeddedAttempt(
             ? ""
             : buildCurrentTurnPromptContextSuffix(params.currentTurnContext);
           const promptForModel = promptSubmission.prompt + currentTurnPromptContextSuffix;
+          const blockedTranscriptPrompt =
+            effectiveTranscriptPrompt ??
+            (isRawModelRun
+              ? params.prompt
+              : annotateInterSessionPromptText(params.prompt, params.inputProvenance));
           const runtimeSystemContext = promptSubmission.runtimeSystemContext?.trim();
           if (promptSubmission.runtimeOnly && runtimeSystemContext) {
             const runtimeSystemPrompt = composeSystemPromptWithHookContext({
@@ -2798,40 +2805,149 @@ export async function runEmbeddedAttempt(
               systemPromptText = runtimeSystemPrompt;
             }
           }
+          const runtimeContextForModel = promptSubmission.runtimeOnly
+            ? undefined
+            : promptSubmission.runtimeContext?.trim();
+          const runtimeSystemPromptForModel = runtimeContextForModel
+            ? composeSystemPromptWithHookContext({
+                baseSystemPrompt: systemPromptText,
+                appendSystemContext: buildRuntimeContextSystemContext(runtimeContextForModel),
+              })
+            : undefined;
+          const systemPromptForModel = runtimeSystemPromptForModel ?? systemPromptText;
+
+          const persistBlockedBeforeAgentRun = async (block: {
+            message: string;
+            pluginId: string;
+            reason: string;
+          }): Promise<boolean> => {
+            if (!blockedTranscriptPrompt.trim()) {
+              return false;
+            }
+            try {
+              const result = await appendBlockedUserMessageToSessionTranscript({
+                agentId: sessionAgentId,
+                sessionKey: params.sessionKey ?? "",
+                originalText: blockedTranscriptPrompt,
+                redactedText: block.message,
+                pluginId: block.pluginId,
+                reason: block.reason,
+                idempotencyKey: `hook-block:before_agent_run:user:${params.runId}`,
+                parentId: transcriptLeafId,
+                updateMode: "inline",
+              });
+              if (!result.ok) {
+                log.warn(
+                  `before_agent_run block: failed to persist redacted user message: ${result.reason}`,
+                );
+                return false;
+              }
+              return true;
+            } catch (err) {
+              log.warn(
+                `before_agent_run block: failed to persist redacted user message: ${
+                  (err as Error)?.message ?? String(err)
+                }`,
+              );
+              return false;
+            }
+          };
+
+          if (hookRunner?.hasHooks("before_agent_run")) {
+            const beforeRunMessages = cloneHookMessages(
+              normalizeMessagesForLlmBoundary(activeSession.messages),
+            );
+            let beforeRunResult:
+              | Awaited<ReturnType<NonNullable<typeof hookRunner>["runBeforeAgentRun"]>>
+              | undefined;
+            try {
+              beforeRunResult = await hookRunner.runBeforeAgentRun(
+                {
+                  prompt: promptForModel,
+                  systemPrompt: systemPromptForModel,
+                  messages: beforeRunMessages,
+                  channelId: hookCtx.channelId,
+                  accountId: hookCtx.accountId,
+                  senderId: params.senderId ?? undefined,
+                  senderIsOwner: params.senderIsOwner ?? undefined,
+                },
+                hookCtx,
+              );
+            } catch (err) {
+              log.warn(`before_agent_run hook failed: ${formatErrorMessage(err)}`);
+              await persistBlockedBeforeAgentRun({
+                message: "Request blocked by before_agent_run policy.",
+                pluginId: "before_agent_run",
+                reason: "before_agent_run hook failed closed",
+              });
+              promptError = new Error("Request blocked by before_agent_run policy.");
+              promptErrorSource = "hook:before_agent_run";
+              skipPromptSubmission = true;
+            }
+            const beforeRunDecision = beforeRunResult?.decision;
+            const beforeRunPluginId = beforeRunResult?.pluginId ?? "unknown";
+            if (beforeRunDecision?.outcome === "block") {
+              const blockReplacementMsg = resolveBlockMessage(beforeRunDecision);
+              log.warn(
+                `before_agent_run hook blocked by ${beforeRunPluginId}: ${beforeRunDecision.reason}`,
+              );
+              await persistBlockedBeforeAgentRun({
+                message: blockReplacementMsg,
+                pluginId: beforeRunPluginId,
+                reason: beforeRunDecision.reason,
+              });
+              promptError = new Error(blockReplacementMsg);
+              promptErrorSource = "hook:before_agent_run";
+              skipPromptSubmission = true;
+            }
+          }
 
           // Detect and load images referenced in the visible prompt for vision-capable models.
           // Images are prompt-local only (pi-like behavior).
-          const imageResult = await detectAndLoadPromptImages({
-            prompt: promptSubmission.prompt,
-            workspaceDir: effectiveWorkspace,
-            model: params.model,
-            existingImages: params.images,
-            imageOrder: params.imageOrder,
-            maxBytes: MAX_IMAGE_BYTES,
-            maxDimensionPx: resolveImageSanitizationLimits(params.config).maxDimensionPx,
-            workspaceOnly: effectiveFsWorkspaceOnly,
-            // Enforce sandbox path restrictions when sandbox is enabled
-            sandbox:
-              sandbox?.enabled && sandbox?.fsBridge
-                ? { root: sandbox.workspaceDir, bridge: sandbox.fsBridge }
-                : undefined,
-          });
+          const imageResult = skipPromptSubmission
+            ? {
+                images: [],
+                detectedRefs: [],
+                loadedCount: 0,
+                skippedCount: 0,
+              }
+            : await detectAndLoadPromptImages({
+                prompt: promptSubmission.prompt,
+                workspaceDir: effectiveWorkspace,
+                model: params.model,
+                existingImages: params.images,
+                imageOrder: params.imageOrder,
+                maxBytes: MAX_IMAGE_BYTES,
+                maxDimensionPx: resolveImageSanitizationLimits(params.config).maxDimensionPx,
+                workspaceOnly: effectiveFsWorkspaceOnly,
+                // Enforce sandbox path restrictions when sandbox is enabled
+                sandbox:
+                  sandbox?.enabled && sandbox?.fsBridge
+                    ? { root: sandbox.workspaceDir, bridge: sandbox.fsBridge }
+                    : undefined,
+              });
 
-          cacheTrace?.recordStage("prompt:images", {
-            prompt: promptForModel,
-            messages: activeSession.messages,
-            note: `images: prompt=${imageResult.images.length}`,
-          });
-          trajectoryRecorder?.recordEvent("context.compiled", {
-            systemPrompt: systemPromptText,
-            prompt: promptForModel,
-            messages: activeSession.messages,
-            tools: toTrajectoryToolDefinitions(effectiveTools),
-            imagesCount: imageResult.images.length,
-            streamStrategy,
-            transport: effectiveAgentTransport,
-            transcriptLeafId,
-          });
+          if (!skipPromptSubmission) {
+            cacheTrace?.recordStage("prompt:before", {
+              prompt: promptForModel,
+              messages: activeSession.messages,
+            });
+            cacheTrace?.recordStage("prompt:images", {
+              prompt: promptForModel,
+              messages: activeSession.messages,
+              note: `images: prompt=${imageResult.images.length}`,
+            });
+            trajectoryRecorder?.recordEvent("context.compiled", {
+              systemPrompt: systemPromptForModel,
+              prompt: promptForModel,
+              messages: activeSession.messages,
+              tools: toTrajectoryToolDefinitions(effectiveTools),
+              imagesCount: imageResult.images.length,
+              streamStrategy,
+              transport: effectiveAgentTransport,
+              transcriptLeafId,
+            });
+          }
 
           const promptSkipReason = skipPromptSubmission
             ? null
@@ -2860,7 +2976,7 @@ export async function runEmbeddedAttempt(
           }
 
           const msgCount = activeSession.messages.length;
-          const systemLen = systemPromptText?.length ?? 0;
+          const systemLen = systemPromptForModel?.length ?? 0;
           const promptLen = effectivePrompt.length;
           const sessionSummary = summarizeSessionContext(activeSession.messages);
           const reserveTokens = settingsManager.getCompactionReserveTokens();
@@ -2902,7 +3018,7 @@ export async function runEmbeddedAttempt(
             );
           }
 
-          if (!isRawModelRun && hookRunner?.hasHooks("llm_input")) {
+          if (!skipPromptSubmission && !isRawModelRun && hookRunner?.hasHooks("llm_input")) {
             hookRunner
               .runLlmInput(
                 {
@@ -2910,9 +3026,11 @@ export async function runEmbeddedAttempt(
                   sessionId: params.sessionId,
                   provider: params.provider,
                   model: params.modelId,
-                  systemPrompt: systemPromptText,
-                  prompt: effectivePrompt,
-                  historyMessages: activeSession.messages,
+                  systemPrompt: systemPromptForModel,
+                  prompt: promptForModel,
+                  historyMessages: cloneHookMessages(
+                    normalizeMessagesForLlmBoundary(activeSession.messages),
+                  ),
                   imagesCount: imageResult.images.length,
                 },
                 {
@@ -2931,22 +3049,24 @@ export async function runEmbeddedAttempt(
               });
           }
 
-          const preemptiveCompaction = shouldPreemptivelyCompactBeforePrompt({
-            messages: activeSession.messages,
-            ...(contextEnginePromptAuthority === "preassembly_may_overflow"
-              ? { unwindowedMessages: unwindowedContextEngineMessagesForPrecheck }
-              : {}),
-            systemPrompt: systemPromptText,
-            prompt: effectivePrompt,
-            contextTokenBudget,
-            reserveTokens,
-            toolResultMaxChars: resolveLiveToolResultMaxChars({
-              contextWindowTokens: contextTokenBudget,
-              cfg: params.config,
-              agentId: sessionAgentId,
-            }),
-          });
-          if (preemptiveCompaction.route === "truncate_tool_results_only") {
+          const preemptiveCompaction = skipPromptSubmission
+            ? null
+            : shouldPreemptivelyCompactBeforePrompt({
+                messages: activeSession.messages,
+                ...(contextEnginePromptAuthority === "preassembly_may_overflow"
+                  ? { unwindowedMessages: unwindowedContextEngineMessagesForPrecheck }
+                  : {}),
+                systemPrompt: systemPromptForModel,
+                prompt: promptForModel,
+                contextTokenBudget,
+                reserveTokens,
+                toolResultMaxChars: resolveLiveToolResultMaxChars({
+                  contextWindowTokens: contextTokenBudget,
+                  cfg: params.config,
+                  agentId: sessionAgentId,
+                }),
+              });
+          if (preemptiveCompaction?.route === "truncate_tool_results_only") {
             const toolResultMaxChars = resolveLiveToolResultMaxChars({
               contextWindowTokens: contextTokenBudget,
               cfg: params.config,
@@ -2991,7 +3111,7 @@ export async function runEmbeddedAttempt(
               skipPromptSubmission = true;
             }
           }
-          if (preemptiveCompaction.shouldCompact) {
+          if (preemptiveCompaction?.shouldCompact) {
             preflightRecovery =
               preemptiveCompaction.route === "compact_then_truncate"
                 ? { route: "compact_then_truncate" }
@@ -3023,7 +3143,7 @@ export async function runEmbeddedAttempt(
             finalPromptText = promptForModel;
             trajectoryRecorder?.recordEvent("prompt.submitted", {
               prompt: promptForModel,
-              systemPrompt: systemPromptText,
+              systemPrompt: systemPromptForModel,
               messages: activeSession.messages,
               imagesCount: imageResult.images.length,
             });
@@ -3036,20 +3156,13 @@ export async function runEmbeddedAttempt(
             if (promptSubmission.runtimeOnly) {
               await abortable(activeSession.prompt(promptForModel));
             } else {
-              const runtimeContext = promptSubmission.runtimeContext?.trim();
-              const runtimeSystemPrompt = runtimeContext
-                ? composeSystemPromptWithHookContext({
-                    baseSystemPrompt: systemPromptText,
-                    appendSystemContext: buildRuntimeContextSystemContext(runtimeContext),
-                  })
-                : undefined;
-              if (runtimeSystemPrompt) {
-                applySystemPromptOverrideToSession(activeSession, runtimeSystemPrompt);
+              if (runtimeSystemPromptForModel) {
+                applySystemPromptOverrideToSession(activeSession, runtimeSystemPromptForModel);
               }
               try {
                 await queueRuntimeContextForNextTurn({
                   session: activeSession,
-                  runtimeContext,
+                  runtimeContext: runtimeContextForModel,
                 });
 
                 // Only pass images option if there are actually images to pass
@@ -3062,7 +3175,7 @@ export async function runEmbeddedAttempt(
                   await abortable(activeSession.prompt(promptForModel));
                 }
               } finally {
-                if (runtimeSystemPrompt) {
+                if (runtimeSystemPromptForModel) {
                   applySystemPromptOverrideToSession(activeSession, systemPromptText);
                 }
               }

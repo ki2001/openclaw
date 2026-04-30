@@ -355,6 +355,7 @@ export async function appendBlockedUserMessageToSessionTranscript(params: {
   pluginId: string;
   reason: string;
   idempotencyKey?: string;
+  parentId?: string | null;
   storePath?: string;
   updateMode?: SessionTranscriptUpdateMode;
 }): Promise<SessionTranscriptAppendResult> {
@@ -409,7 +410,10 @@ export async function appendBlockedUserMessageToSessionTranscript(params: {
   // line. The JSONL format is stable: one JSON object per line.
   const messageId = `blocked-${crypto.randomUUID()}`;
   const nowMs = Date.now();
-  const parentId = await readLatestTranscriptMessageId(sessionFile);
+  const parentId =
+    params.parentId !== undefined
+      ? params.parentId
+      : await readLatestTranscriptMessageId(sessionFile);
   const jsonlEntry: Record<string, unknown> = {
     type: "message",
     id: messageId,

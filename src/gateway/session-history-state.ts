@@ -6,6 +6,7 @@ import {
   attachOpenClawTranscriptMeta,
   readRecentSessionMessagesWithStatsAsync,
   readSessionMessagesAsync,
+  stripBlockedOriginalContentMeta,
 } from "./session-utils.js";
 
 type SessionHistoryTranscriptMeta = {
@@ -229,10 +230,13 @@ export class SessionHistorySseState {
       return null;
     }
     this.rawTranscriptSeq += 1;
-    const nextMessage = attachOpenClawTranscriptMeta(update.message, {
-      ...(typeof update.messageId === "string" ? { id: update.messageId } : {}),
-      seq: this.rawTranscriptSeq,
-    });
+    const nextMessage = attachOpenClawTranscriptMeta(
+      stripBlockedOriginalContentMeta(update.message),
+      {
+        ...(typeof update.messageId === "string" ? { id: update.messageId } : {}),
+        seq: this.rawTranscriptSeq,
+      },
+    );
     const [sanitizedMessage] = toSessionHistoryMessages(
       projectChatDisplayMessages([nextMessage], { maxChars: this.maxChars }),
     );
