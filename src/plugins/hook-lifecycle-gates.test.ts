@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import type { GlobalHookRunnerRegistry } from "./hook-registry.types.js";
 import type { PluginHookRegistration, PluginHookAgentContext } from "./hook-types.js";
 import { createHookRunner } from "./hooks.js";

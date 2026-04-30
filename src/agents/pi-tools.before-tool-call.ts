@@ -14,7 +14,6 @@ import {
 } from "../infra/diagnostic-trace-context.js";
 import type { SessionState } from "../logging/diagnostic-session-state.js";
 import { createSubsystemLogger } from "../logging/subsystem.js";
-import { requestPluginApproval } from "../plugins/hook-approval.js";
 import { getGlobalHookRunner } from "../plugins/hook-runner-global.js";
 import { copyPluginToolMeta } from "../plugins/tools.js";
 import { runTrustedToolPolicies } from "../plugins/trusted-tool-policy.js";

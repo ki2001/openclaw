@@ -4675,6 +4675,7 @@ public struct PluginApprovalRequestParams: Codable, Sendable {
     public let turnsourceto: String?
     public let turnsourceaccountid: String?
     public let turnsourcethreadid: AnyCodable?
+    public let alloweddecisions: [String]?
     public let timeoutms: Int?
     public let twophase: Bool?
 
@@ -4691,6 +4692,7 @@ public struct PluginApprovalRequestParams: Codable, Sendable {
         turnsourceto: String?,
         turnsourceaccountid: String?,
         turnsourcethreadid: AnyCodable?,
+        alloweddecisions: [String]?,
         timeoutms: Int?,
         twophase: Bool?)
     {
@@ -4706,6 +4708,7 @@ public struct PluginApprovalRequestParams: Codable, Sendable {
         self.turnsourceto = turnsourceto
         self.turnsourceaccountid = turnsourceaccountid
         self.turnsourcethreadid = turnsourcethreadid
+        self.alloweddecisions = alloweddecisions
         self.timeoutms = timeoutms
         self.twophase = twophase
     }
@@ -4723,6 +4726,7 @@ public struct PluginApprovalRequestParams: Codable, Sendable {
         case turnsourceto = "turnSourceTo"
         case turnsourceaccountid = "turnSourceAccountId"
         case turnsourcethreadid = "turnSourceThreadId"
+        case alloweddecisions = "allowedDecisions"
         case timeoutms = "timeoutMs"
         case twophase = "twoPhase"
     }

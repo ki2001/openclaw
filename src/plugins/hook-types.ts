@@ -21,7 +21,7 @@ import type {
   PluginHookBeforePromptBuildEvent,
   PluginHookBeforePromptBuildResult,
 } from "./hook-before-agent-start.types.js";
-import type { HookDecision, InputGateDecision } from "./hook-decision-types.js";
+import type { InputGateDecision } from "./hook-decision-types.js";
 import type {
   PluginHookInboundClaimContext,
   PluginHookInboundClaimEvent,
