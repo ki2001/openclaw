@@ -224,15 +224,19 @@ function injectOpenRouterResponseCache(
   if (!responseCacheHeaders) {
     return baseStreamFn;
   }
-  return (model, context, options) =>
-    (
+  return (model, context, options) => {
+    const nextOptions = isVerifiedOpenRouterRoute(model)
+      ? mergeResponseCacheHeaders(options, responseCacheHeaders)
+      : options;
+    return (
       baseStreamFn ??
       ((nextModel) => {
         throw new Error(
           `OpenRouter response-cache wrapper requires an underlying streamFn for ${nextModel.id}.`,
         );
       })
-    )(model, context, mergeResponseCacheHeaders(options, responseCacheHeaders));
+    )(model, context, nextOptions);
+  };
 }
 
 function createOpenRouterAnthropicPrefillWrapper(baseStreamFn: StreamFn | undefined): StreamFn {
