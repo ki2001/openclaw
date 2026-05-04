@@ -702,6 +702,96 @@ describe("resolvePluginCapabilityProviders", () => {
     });
   });
 
+  it("does not treat every configured model provider as a requested speech provider", () => {
+    const active = createEmptyPluginRegistry();
+    active.speechProviders.push({
+      pluginId: "openai",
+      pluginName: "openai",
+      source: "test",
+      provider: {
+        id: "openai",
+        label: "openai",
+        isConfigured: () => true,
+        synthesize: async () => ({
+          audioBuffer: Buffer.from("x"),
+          outputFormat: "mp3",
+          voiceCompatible: false,
+          fileExtension: ".mp3",
+        }),
+      },
+    } as never);
+    const loaded = createEmptyPluginRegistry();
+    loaded.speechProviders.push(
+      {
+        pluginId: "microsoft",
+        pluginName: "microsoft",
+        source: "test",
+        provider: {
+          id: "microsoft",
+          label: "microsoft",
+          isConfigured: () => true,
+          synthesize: async () => ({
+            audioBuffer: Buffer.from("x"),
+            outputFormat: "mp3",
+            voiceCompatible: false,
+            fileExtension: ".mp3",
+          }),
+        },
+      } as never,
+      {
+        pluginId: "elevenlabs",
+        pluginName: "elevenlabs",
+        source: "test",
+        provider: {
+          id: "elevenlabs",
+          label: "elevenlabs",
+          isConfigured: () => true,
+          synthesize: async () => ({
+            audioBuffer: Buffer.from("x"),
+            outputFormat: "mp3",
+            voiceCompatible: false,
+            fileExtension: ".mp3",
+          }),
+        },
+      } as never,
+    );
+    mocks.loadPluginManifestRegistry.mockReturnValue({
+      plugins: [
+        {
+          id: "microsoft",
+          origin: "bundled",
+          contracts: { speechProviders: ["microsoft"] },
+        },
+        {
+          id: "elevenlabs",
+          origin: "bundled",
+          contracts: { speechProviders: ["elevenlabs"] },
+        },
+      ] as never,
+      diagnostics: [],
+    });
+    mocks.resolveRuntimePluginRegistry.mockImplementation((params?: unknown) =>
+      params === undefined ? active : loaded,
+    );
+
+    const providers = resolvePluginCapabilityProviders({
+      key: "speechProviders",
+      cfg: {
+        models: {
+          providers: {
+            microsoft: { apiKey: "model-key" },
+            elevenlabs: { apiKey: "model-key" },
+          },
+        },
+        messages: { tts: { provider: "openai" } },
+      } as OpenClawConfig,
+    });
+
+    expectResolvedCapabilityProviderIds(providers, ["openai"]);
+    expect(mocks.resolveRuntimePluginRegistry).toHaveBeenCalledWith();
+    expect(collectActiveRegistryLookups()).toEqual([]);
+  });
+
   it("merges active and allowlisted bundled capability providers when cfg is passed", () => {
     const active = createEmptyPluginRegistry();
     active.speechProviders.push({

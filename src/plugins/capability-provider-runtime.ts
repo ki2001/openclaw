@@ -303,7 +303,6 @@ function collectRequestedSpeechProviderIds(cfg: OpenClawConfig | undefined): Set
       : undefined;
   addStringValue(requested, tts?.provider);
   addObjectKeys(requested, tts?.providers);
-  addObjectKeys(requested, cfg?.models?.providers);
   return requested;
 }
 
