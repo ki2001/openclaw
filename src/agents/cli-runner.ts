@@ -182,6 +182,16 @@ export async function runPreparedCliAgent(
     durationMs: Date.now() - context.started,
   });
 
+  const buildBlockedAgentEndEvent = (message: string) => ({
+    messages: buildAgentHookConversationMessages({
+      historyMessages,
+      currentTurnMessages: [buildCliHookUserMessage(message)],
+    }),
+    success: false,
+    error: message,
+    durationMs: Date.now() - context.started,
+  });
+
   const buildBlockedBeforeAgentRunResult = (message: string): EmbeddedPiRunResult => ({
     payloads: [{ text: message, isError: true }],
     meta: {
@@ -404,7 +414,7 @@ export async function runPreparedCliAgent(
           reason: `before_agent_run hook failed closed: ${formatErrorMessage(err)}`,
         });
         runAgentHarnessAgentEndHook({
-          event: buildFailedAgentEndEvent(blockMessage),
+          event: buildBlockedAgentEndEvent(blockMessage),
           ctx: hookContext,
           hookRunner,
         });
@@ -420,7 +430,7 @@ export async function runPreparedCliAgent(
           reason: beforeRunDecision.reason,
         });
         runAgentHarnessAgentEndHook({
-          event: buildFailedAgentEndEvent(blockMessage),
+          event: buildBlockedAgentEndEvent(blockMessage),
           ctx: hookContext,
           hookRunner,
         });

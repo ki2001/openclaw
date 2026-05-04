@@ -47,6 +47,7 @@ const mockState = vi.hoisted(() => ({
     };
   }>,
   dispatchError: null as Error | null,
+  dispatchErrorAfterAgentRunStart: null as Error | null,
   triggerAgentRunStart: false,
   onAfterAgentRunStart: null as (() => void) | null,
   agentRunId: "run-agent-1",
@@ -179,6 +180,9 @@ vi.mock("../../auto-reply/dispatch.js", () => ({
       if (mockState.triggerAgentRunStart) {
         params.replyOptions?.onAgentRunStart?.(mockState.agentRunId);
         mockState.onAfterAgentRunStart?.();
+      }
+      if (mockState.dispatchErrorAfterAgentRunStart) {
+        throw mockState.dispatchErrorAfterAgentRunStart;
       }
       if (mockState.dispatchedReplies.length > 0) {
         for (const reply of mockState.dispatchedReplies) {
@@ -532,6 +536,7 @@ describe("chat directive tag stripping for non-streaming final payloads", () => 
     mockState.finalPayload = null;
     mockState.dispatchedReplies = [];
     mockState.dispatchError = null;
+    mockState.dispatchErrorAfterAgentRunStart = null;
     mockState.mainSessionKey = "main";
     mockState.triggerAgentRunStart = false;
     mockState.onAfterAgentRunStart = null;
@@ -2180,6 +2185,86 @@ describe("chat directive tag stripping for non-streaming final payloads", () => 
         content: "secret prompt that may be blocked",
         timestamp: expect.any(Number),
       },
+    });
+  });
+
+  it("does not emit raw user transcript content after before_agent_run blocks", async () => {
+    createTranscriptFixture("openclaw-chat-send-user-transcript-blocked-gate-");
+    mockState.finalText = "The agent cannot read this message.";
+    mockState.triggerAgentRunStart = true;
+    mockState.hasBeforeAgentRunHooks = true;
+    mockState.onAfterAgentRunStart = () => {
+      fs.appendFileSync(
+        mockState.transcriptPath,
+        `${JSON.stringify({
+          type: "message",
+          message: {
+            role: "user",
+            content: [{ type: "text", text: "The agent cannot read this message." }],
+            idempotencyKey: "hook-block:before_agent_run:user:idem-user-transcript-blocked-gate",
+          },
+          originalBlockedContent: {
+            content: [{ type: "text", text: "secret prompt that was blocked" }],
+            blockedBy: "policy-plugin",
+            reason: "contains protected content",
+            blockedAt: 1,
+          },
+        })}\n`,
+        "utf-8",
+      );
+    };
+    const respond = vi.fn();
+    const context = createChatContext();
+
+    await runNonStreamingChatSend({
+      context,
+      respond,
+      idempotencyKey: "idem-user-transcript-blocked-gate",
+      message: "secret prompt that was blocked",
+      expectBroadcast: false,
+    });
+
+    const userUpdates = mockState.emittedTranscriptUpdates.filter(
+      (update) =>
+        typeof update.message === "object" &&
+        update.message !== null &&
+        (update.message as { role?: unknown }).role === "user",
+    );
+    expect(userUpdates).toHaveLength(0);
+  });
+
+  it("emits raw user transcript content when before_agent_run passes but the agent fails", async () => {
+    createTranscriptFixture("openclaw-chat-send-user-transcript-gate-pass-error-");
+    mockState.triggerAgentRunStart = true;
+    mockState.hasBeforeAgentRunHooks = true;
+    mockState.dispatchErrorAfterAgentRunStart = new Error("model unavailable");
+    const respond = vi.fn();
+    const context = createChatContext();
+
+    await runNonStreamingChatSend({
+      context,
+      respond,
+      idempotencyKey: "idem-user-transcript-gate-pass-error",
+      message: "prompt allowed before model error",
+      expectBroadcast: false,
+    });
+
+    await waitForAssertion(() => {
+      const userUpdate = mockState.emittedTranscriptUpdates.find(
+        (update) =>
+          typeof update.message === "object" &&
+          update.message !== null &&
+          (update.message as { role?: unknown }).role === "user",
+      );
+      expect(userUpdate).toMatchObject({
+        sessionFile: expect.stringMatching(/sess\.jsonl$/),
+        sessionKey: "main",
+        message: {
+          role: "user",
+          content: "prompt allowed before model error",
+          timestamp: expect.any(Number),
+        },
+      });
     });
   });
 

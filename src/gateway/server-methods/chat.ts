@@ -2264,6 +2264,29 @@ export const chatHandlers: GatewayRequestHandlers = {
       const deliveredReplies: Array<{ payload: ReplyPayload; kind: "block" | "final" }> = [];
       let appendedWebchatAgentMedia = false;
       let userTranscriptUpdatePromise: Promise<void> | null = null;
+      let agentRunStarted = false;
+      const hasBeforeAgentRunGate = getGlobalHookRunner()?.hasHooks("before_agent_run") === true;
+      const beforeAgentRunBlockIdempotencyKey = `hook-block:before_agent_run:user:${clientRunId}`;
+      const hasPersistedBeforeAgentRunBlock = async () => {
+        if (!hasBeforeAgentRunGate) {
+          return false;
+        }
+        const { storePath: latestStorePath, entry: latestEntry } = loadSessionEntry(sessionKey);
+        const resolvedSessionId = latestEntry?.sessionId ?? backingSessionId;
+        if (!resolvedSessionId) {
+          return false;
+        }
+        const transcriptPath = resolveTranscriptPath({
+          sessionId: resolvedSessionId,
+          storePath: latestStorePath,
+          sessionFile: latestEntry?.sessionFile ?? entry?.sessionFile,
+          agentId,
+        });
+        if (!transcriptPath) {
+          return false;
+        }
+        return await transcriptHasIdempotencyKey(transcriptPath, beforeAgentRunBlockIdempotencyKey);
+      };
       const emitUserTranscriptUpdate = async () => {
         if (userTranscriptUpdatePromise) {
           await userTranscriptUpdatePromise;
@@ -2296,6 +2319,12 @@ export const chatHandlers: GatewayRequestHandlers = {
           });
         })();
         await userTranscriptUpdatePromise;
+      };
+      const emitUserTranscriptUpdateUnlessBeforeAgentRunBlocked = async () => {
+        if (await hasPersistedBeforeAgentRunBlock()) {
+          return;
+        }
+        await emitUserTranscriptUpdate();
       };
       let transcriptMediaRewriteDone = false;
       const rewriteUserTranscriptMedia = async () => {
@@ -2429,8 +2458,6 @@ export const chatHandlers: GatewayRequestHandlers = {
         },
       });
 
-      let agentRunStarted = false;
-      const hasBeforeAgentRunGate = getGlobalHookRunner()?.hasHooks("before_agent_run") === true;
       void dispatchInboundMessage({
         ctx,
         cfg,
@@ -2639,7 +2666,11 @@ export const chatHandlers: GatewayRequestHandlers = {
               });
             }
           } else {
-            void emitUserTranscriptUpdate();
+            await emitUserTranscriptUpdateUnlessBeforeAgentRunBlocked().catch((transcriptErr) => {
+              context.logGateway.warn(
+                `webchat user transcript update failed after agent run: ${formatForLog(transcriptErr)}`,
+              );
+            });
           }
           if (!context.chatAbortedRuns.has(clientRunId)) {
             setGatewayDedupeEntry({
@@ -2653,19 +2684,22 @@ export const chatHandlers: GatewayRequestHandlers = {
             });
           }
         })
-        .catch((err) => {
+        .catch(async (err) => {
           void rewriteUserTranscriptMedia().catch((rewriteErr) => {
             context.logGateway.warn(
               `webchat transcript media rewrite failed after error: ${formatForLog(rewriteErr)}`,
             );
           });
-          if (!agentRunStarted || !hasBeforeAgentRunGate) {
-            void emitUserTranscriptUpdate().catch((transcriptErr) => {
-              context.logGateway.warn(
-                `webchat user transcript update failed after error: ${formatForLog(transcriptErr)}`,
-              );
-            });
-          }
+          const emitAfterError = !agentRunStarted
+            ? emitUserTranscriptUpdate()
+            : hasBeforeAgentRunGate
+              ? emitUserTranscriptUpdateUnlessBeforeAgentRunBlocked()
+              : emitUserTranscriptUpdate();
+          await emitAfterError.catch((transcriptErr) => {
+            context.logGateway.warn(
+              `webchat user transcript update failed after error: ${formatForLog(transcriptErr)}`,
+            );
+          });
           const error = errorShape(ErrorCodes.UNAVAILABLE, String(err));
           setGatewayDedupeEntry({
             dedupe: context.dedupe,

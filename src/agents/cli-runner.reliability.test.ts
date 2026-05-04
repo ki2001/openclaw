@@ -689,6 +689,20 @@ describe("runCliAgent reliability", () => {
       await vi.waitFor(() => {
         expect(hookRunner.runAgentEnd).toHaveBeenCalledTimes(1);
       });
+      expect(hookRunner.runAgentEnd).toHaveBeenCalledWith(
+        expect.objectContaining({
+          success: false,
+          error: "The agent cannot read this message.",
+          messages: expect.arrayContaining([
+            expect.objectContaining({
+              role: "user",
+              content: "The agent cannot read this message.",
+            }),
+          ]),
+        }),
+        expect.any(Object),
+      );
+      expect(JSON.stringify(hookRunner.runAgentEnd.mock.calls)).not.toContain("secret prompt");
 
       const lines = fs.readFileSync(sessionFile, "utf-8").trim().split("\n");
       const blockedLine = JSON.parse(lines[lines.length - 1]);
