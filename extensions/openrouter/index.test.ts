@@ -10,6 +10,7 @@ import {
   isOpenRouterProxyReasoningUnsupportedModel,
 } from "./provider-catalog.js";
 import { resolveThinkingProfile } from "./provider-policy-api.js";
+import { __testing as streamTesting } from "./stream.js";
 
 describe("openrouter provider hooks", () => {
   it("registers OpenRouter speech alongside model and media providers", async () => {
@@ -184,6 +185,138 @@ describe("openrouter provider hooks", () => {
       api: "openai-completions",
       baseUrl: "https://openrouter.ai/api/v1",
     });
+  });
+
+  it("keeps OpenRouter response caching disabled unless explicitly enabled", () => {
+    expect(streamTesting.resolveOpenRouterResponseCacheHeaders(undefined)).toBeUndefined();
+    expect(
+      streamTesting.resolveOpenRouterResponseCacheHeaders({
+        responseCache: false,
+        responseCacheTtlSeconds: 300,
+        responseCacheClear: true,
+      }),
+    ).toBeUndefined();
+  });
+
+  it("resolves OpenRouter response cache headers from extra params", () => {
+    expect(
+      streamTesting.resolveOpenRouterResponseCacheHeaders({
+        responseCache: { enabled: true, ttlSeconds: 300, clear: true },
+      }),
+    ).toEqual({
+      "X-OpenRouter-Cache": "true",
+      "X-OpenRouter-Cache-TTL": "300",
+      "X-OpenRouter-Cache-Clear": "true",
+    });
+  });
+
+  it("fails closed when OpenRouter response cache TTL is invalid", () => {
+    for (const ttlSeconds of [0, -1, 86_401, 1.5, "300.7", "not-a-number"]) {
+      expect(
+        streamTesting.resolveOpenRouterResponseCacheHeaders({
+          responseCache: { enabled: true, ttlSeconds },
+        }),
+      ).toBeUndefined();
+    }
+  });
+
+  it("injects OpenRouter response cache headers without overriding caller headers", async () => {
+    const provider = await registerSingleProviderPlugin(openrouterPlugin);
+    const baseStreamFn = vi.fn(
+      (..._args: Parameters<import("@mariozechner/pi-agent-core").StreamFn>) =>
+        ({ async *[Symbol.asyncIterator]() {} }) as never,
+    );
+
+    const wrapped = provider.wrapStreamFn?.({
+      provider: "openrouter",
+      modelId: "openai/gpt-5.4",
+      extraParams: {
+        responseCache: { enabled: true, ttlSeconds: 300, clear: true },
+      },
+      streamFn: baseStreamFn,
+      thinkingLevel: "high",
+    } as never);
+
+    void wrapped?.(
+      {
+        provider: "openrouter",
+        api: "openai-completions",
+        id: "openai/gpt-5.4",
+        compat: {},
+      } as never,
+      { messages: [] } as never,
+      {
+        headers: {
+          "X-OpenRouter-Cache": "caller-cache",
+          "x-openrouter-cache-ttl": "60",
+          "X-OpenRouter-Cache-Clear": "caller-clear",
+          "X-Trace-Id": "trace-1",
+        },
+      } as never,
+    );
+
+    expect(baseStreamFn).toHaveBeenCalledOnce();
+    const firstCall = baseStreamFn.mock.calls[0];
+    const headers = firstCall?.[2]?.headers ?? {};
+    expect(headers).toEqual(
+      expect.objectContaining({
+        "X-OpenRouter-Cache": "caller-cache",
+        "x-openrouter-cache-ttl": "60",
+        "X-OpenRouter-Cache-Clear": "caller-clear",
+        "X-Trace-Id": "trace-1",
+      }),
+    );
+    for (const headerName of [
+      "x-openrouter-cache",
+      "x-openrouter-cache-ttl",
+      "x-openrouter-cache-clear",
+    ]) {
+      expect(Object.keys(headers).filter((key) => key.toLowerCase() === headerName)).toHaveLength(
+        1,
+      );
+    }
+  });
+
+  it("does not inject OpenRouter response cache headers for non-OpenRouter models", async () => {
+    const provider = await registerSingleProviderPlugin(openrouterPlugin);
+    const baseStreamFn = vi.fn(
+      (..._args: Parameters<import("@mariozechner/pi-agent-core").StreamFn>) =>
+        ({ async *[Symbol.asyncIterator]() {} }) as never,
+    );
+
+    const wrapped = provider.wrapStreamFn?.({
+      provider: "openrouter",
+      modelId: "openai/gpt-5.4",
+      extraParams: {
+        responseCache: { enabled: true, ttlSeconds: 300, clear: true },
+      },
+      streamFn: baseStreamFn,
+      thinkingLevel: "high",
+    } as never);
+
+    void wrapped?.(
+      {
+        provider: "openai",
+        api: "openai-completions",
+        baseUrl: "https://api.openai.com/v1",
+        id: "gpt-5.4",
+        compat: {},
+      } as never,
+      { messages: [] } as never,
+      { headers: { "X-Trace-Id": "trace-1" } } as never,
+    );
+
+    expect(baseStreamFn).toHaveBeenCalledOnce();
+    const firstCall = baseStreamFn.mock.calls[0];
+    const headers = firstCall?.[2]?.headers ?? {};
+    expect(headers).toEqual(expect.objectContaining({ "X-Trace-Id": "trace-1" }));
+    for (const headerName of [
+      "x-openrouter-cache",
+      "x-openrouter-cache-ttl",
+      "x-openrouter-cache-clear",
+    ]) {
+      expect(Object.keys(headers).some((key) => key.toLowerCase() === headerName)).toBe(false);
+    }
   });
 
   it("injects provider routing into compat before applying stream wrappers", async () => {
