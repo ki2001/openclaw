@@ -104,6 +104,7 @@ observation-only.
 - `agent_turn_prepare` — consume queued plugin turn injections and add same-turn context before prompt hooks
 - `before_prompt_build` — add dynamic context or system-prompt text before the model call
 - `before_agent_start` — compatibility-only combined phase; prefer the two hooks above
+- **`before_agent_run`** — inspect the final prompt and session messages before model submission and optionally block the run
 - **`before_agent_reply`** — short-circuit the model turn with a synthetic reply or silence
 - **`before_agent_finalize`** — inspect the natural final answer and request one more model pass
 - `agent_end` — observe final messages, success state, and run duration
@@ -232,6 +233,14 @@ Use the phase-specific hooks for new plugins:
 `before_agent_start` remains for compatibility. Prefer the explicit hooks above
 so your plugin does not depend on a legacy combined phase.
 
+`before_agent_run` runs after prompt construction and before any model input,
+including prompt-local image loading and `llm_input` observation. It receives
+the final prompt, the active system prompt, and the current session messages.
+Return `{ outcome: "block", reason, message? }` to stop the run before the
+model can read the prompt. `reason` is internal; `message` is the user-facing
+replacement. The only supported outcomes are `pass` and `block`; unsupported
+decision shapes fail closed.
+
 `before_agent_start` and `agent_end` include `event.runId` when OpenClaw can
 identify the active run. The same value is also available on `ctx.runId`.
 Cron-driven runs also expose `ctx.jobId` (the originating cron job id) so
@@ -264,8 +273,9 @@ the harness for one more model pass before finalization, `{ action:
 Codex native `Stop` hooks are relayed into this hook as OpenClaw
 `before_agent_finalize` decisions.
 
-Non-bundled plugins that need `llm_input`, `llm_output`,
-`before_agent_finalize`, or `agent_end` must set:
+Non-bundled plugins that need raw conversation hooks (`before_model_resolve`,
+`before_agent_reply`, `llm_input`, `llm_output`, `before_agent_finalize`,
+`agent_end`, or `before_agent_run`) must set:
 
 ```json
 {

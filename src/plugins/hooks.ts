@@ -9,10 +9,9 @@ import { formatHookErrorForLog } from "../hooks/fire-and-forget.js";
 import { formatErrorMessage } from "../infra/errors.js";
 import { concatOptionalTextSegments } from "../shared/text/join-segments.js";
 import {
-  type HookDecision,
   type GateHookResult,
+  type InputGateDecision,
   isHookDecision,
-  mergeHookDecisions,
 } from "./hook-decision-types.js";
 import type { GlobalHookRunnerRegistry, HookRunnerRegistry } from "./hook-registry.types.js";
 import type {
@@ -1003,15 +1002,15 @@ export function createHookRunner(
   /**
    * Run before_agent_run gate hook.
    * Fires after session resolution and workspace preparation, before model inference.
-   * Returns the most-restrictive HookDecision from all handlers.
+   * Returns the most-restrictive pass/block decision from all handlers.
    * Handlers that return void are treated as pass.
    */
   async function runBeforeAgentRun(
     event: PluginHookBeforeAgentRunEvent,
     ctx: PluginHookAgentContext,
-  ): Promise<GateHookResult | undefined> {
+  ): Promise<GateHookResult<InputGateDecision> | undefined> {
     let winningPluginId: string | undefined;
-    const decision = await runModifyingHook<"before_agent_run", HookDecision | undefined>(
+    const decision = await runModifyingHook<"before_agent_run", InputGateDecision | undefined>(
       "before_agent_run",
       event,
       ctx,
@@ -1020,13 +1019,22 @@ export function createHookRunner(
           if (!isHookDecision(next)) {
             return _acc;
           }
-          const merged = mergeHookDecisions(_acc, next);
-          if (merged === next) {
+          const normalized: InputGateDecision =
+            next.outcome === "ask"
+              ? {
+                  outcome: "block",
+                  reason: "before_agent_run only supports pass/block decisions",
+                }
+              : next;
+          const merged =
+            !_acc || (normalized.outcome === "block" && _acc.outcome !== "block")
+              ? normalized
+              : _acc;
+          if (merged === normalized) {
             winningPluginId = reg.pluginId;
           }
           return merged;
         },
-        // ask does NOT short-circuit — keep running so other plugins can escalate to block
         shouldStop: (result) => result?.outcome === "block",
         terminalLabel: "gate-decision",
       },

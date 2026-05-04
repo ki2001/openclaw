@@ -170,10 +170,13 @@ export const isPromptInjectionHookName = (hookName: PluginHookName): boolean =>
   promptInjectionHookNameSet.has(hookName);
 
 export const CONVERSATION_HOOK_NAMES = [
+  "before_model_resolve",
+  "before_agent_reply",
   "llm_input",
   "llm_output",
   "before_agent_finalize",
   "agent_end",
+  "before_agent_run",
 ] as const satisfies readonly PluginHookName[];
 
 export type ConversationHookName = (typeof CONVERSATION_HOOK_NAMES)[number];
@@ -810,7 +813,7 @@ export type PluginHookBeforeAgentRunEvent = {
   senderIsOwner?: boolean;
 };
 
-/** Result type for before_agent_run. Returns HookDecision or void (= pass). */
+/** Result type for before_agent_run. Returns pass/block or void (= pass). */
 export type PluginHookBeforeAgentRunResult = InputGateDecision | void;
 
 export type PluginHookHandlerMap = {

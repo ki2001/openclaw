@@ -89,7 +89,7 @@ export function isHookDecision(value: unknown): value is HookDecision {
 }
 
 /** Outcomes valid for input gates (before_agent_run). */
-export type InputGateDecision = HookDecisionPass | HookDecisionBlock | HookDecisionAsk;
+export type InputGateDecision = HookDecisionPass | HookDecisionBlock;
 
 /**
  * A gate hook decision paired with the pluginId that produced it.

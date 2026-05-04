@@ -179,43 +179,44 @@ describe("before_agent_run hook", () => {
   });
 });
 
-describe("before_agent_run ask outcome", () => {
-  it("returns ask when handler returns ask", async () => {
+describe("before_agent_run unsupported ask outcome", () => {
+  it("fails closed when handler returns ask", async () => {
     const registry = makeRegistry([
       {
         pluginId: "test",
         hookName: "before_agent_run",
-        handler: async () => ({
-          outcome: "ask" as const,
-          reason: "needs approval",
-          title: "Review Required",
-          description: "This prompt requires human review.",
-        }),
+        handler: async () =>
+          ({
+            outcome: "ask",
+            reason: "needs approval",
+            title: "Review Required",
+            description: "This prompt requires human review.",
+          }) as never,
         source: "test",
       },
     ]);
     const runner = createHookRunner(registry);
     const result = await runner.runBeforeAgentRun({ prompt: "hello", messages: [] }, ctx);
-    expect(result?.decision.outcome).toBe("ask");
+    expect(result?.decision).toEqual({
+      outcome: "block",
+      reason: "before_agent_run only supports pass/block decisions",
+    });
     expect(result?.pluginId).toBe("test");
-    if (result?.decision.outcome === "ask") {
-      expect(result.decision.reason).toBe("needs approval");
-      expect(result.decision.title).toBe("Review Required");
-    }
   });
 
-  it("ask does NOT short-circuit — next handler still runs", async () => {
+  it("short-circuits unsupported ask decisions", async () => {
     let secondHandlerCalled = false;
     const registry = makeRegistry([
       {
         pluginId: "plugin-a",
         hookName: "before_agent_run",
-        handler: async () => ({
-          outcome: "ask" as const,
-          reason: "check",
-          title: "Check",
-          description: "Check this.",
-        }),
+        handler: async () =>
+          ({
+            outcome: "ask" as const,
+            reason: "check",
+            title: "Check",
+            description: "Check this.",
+          }) as never,
         source: "test",
         priority: 10,
       },
@@ -231,39 +232,10 @@ describe("before_agent_run ask outcome", () => {
       },
     ]);
     const runner = createHookRunner(registry);
-    await runner.runBeforeAgentRun({ prompt: "test", messages: [] }, ctx);
-    expect(secondHandlerCalled).toBe(true);
-  });
-
-  it("ask + block in sequence → block wins (most-restrictive)", async () => {
-    const registry = makeRegistry([
-      {
-        pluginId: "plugin-a",
-        hookName: "before_agent_run",
-        handler: async () => ({
-          outcome: "ask" as const,
-          reason: "needs approval",
-          title: "Check",
-          description: "Review.",
-        }),
-        source: "test",
-        priority: 10,
-      },
-      {
-        pluginId: "plugin-b",
-        hookName: "before_agent_run",
-        handler: async () => ({
-          outcome: "block" as const,
-          reason: "blocked by policy",
-        }),
-        source: "test",
-        priority: 5,
-      },
-    ]);
-    const runner = createHookRunner(registry);
     const result = await runner.runBeforeAgentRun({ prompt: "test", messages: [] }, ctx);
     expect(result?.decision.outcome).toBe("block");
-    expect(result?.pluginId).toBe("plugin-b");
+    expect(result?.pluginId).toBe("plugin-a");
+    expect(secondHandlerCalled).toBe(false);
   });
 });
 
