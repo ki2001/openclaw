@@ -16,8 +16,127 @@ import {
 
 const log = createSubsystemLogger("openrouter-stream");
 
+const RESPONSE_CACHE_HEADER = "X-OpenRouter-Cache";
+const RESPONSE_CACHE_TTL_HEADER = "X-OpenRouter-Cache-TTL";
+const RESPONSE_CACHE_CLEAR_HEADER = "X-OpenRouter-Cache-Clear";
+const MIN_RESPONSE_CACHE_TTL_SECONDS = 1;
+const MAX_RESPONSE_CACHE_TTL_SECONDS = 86_400;
+
 function readString(value: unknown): string | undefined {
   return typeof value === "string" ? value.trim() : undefined;
+}
+
+function readBoolean(value: unknown): boolean | undefined {
+  if (typeof value === "boolean") {
+    return value;
+  }
+  if (typeof value !== "string") {
+    return undefined;
+  }
+  const normalized = value.trim().toLowerCase();
+  if (["1", "true", "yes", "on"].includes(normalized)) {
+    return true;
+  }
+  if (["0", "false", "no", "off"].includes(normalized)) {
+    return false;
+  }
+  return undefined;
+}
+
+function readInteger(value: unknown): number | undefined {
+  if (typeof value === "number" && Number.isInteger(value)) {
+    return value;
+  }
+  if (typeof value !== "string") {
+    return undefined;
+  }
+  const normalized = value.trim();
+  if (!/^-?\d+$/.test(normalized)) {
+    return undefined;
+  }
+  return Number.parseInt(normalized, 10);
+}
+
+function getHeaderCaseInsensitive(
+  headers: Record<string, string> | undefined,
+  name: string,
+): string | undefined {
+  if (!headers) {
+    return undefined;
+  }
+  const key = Object.keys(headers).find(
+    (candidate) => candidate.toLowerCase() === name.toLowerCase(),
+  );
+  return key ? headers[key] : undefined;
+}
+
+function resolveOpenRouterResponseCacheHeaders(
+  extraParams: Record<string, unknown> | undefined,
+): Record<string, string> | undefined {
+  const rawConfig = extraParams?.responseCache ?? extraParams?.response_cache;
+  const config =
+    rawConfig && typeof rawConfig === "object" ? (rawConfig as Record<string, unknown>) : undefined;
+  const enabled =
+    readBoolean(config?.enabled) ??
+    readBoolean(extraParams?.responseCacheEnabled) ??
+    readBoolean(extraParams?.response_cache_enabled) ??
+    readBoolean(rawConfig);
+
+  if (enabled !== true) {
+    return undefined;
+  }
+
+  const rawTtlSeconds =
+    config?.ttlSeconds ??
+    config?.ttl_seconds ??
+    config?.ttl ??
+    extraParams?.responseCacheTtlSeconds ??
+    extraParams?.response_cache_ttl_seconds;
+  const ttlSeconds = readInteger(rawTtlSeconds);
+  const clear =
+    readBoolean(config?.clear) ??
+    readBoolean(extraParams?.responseCacheClear) ??
+    readBoolean(extraParams?.response_cache_clear);
+
+  if (
+    rawTtlSeconds !== undefined &&
+    (ttlSeconds === undefined ||
+      ttlSeconds < MIN_RESPONSE_CACHE_TTL_SECONDS ||
+      ttlSeconds > MAX_RESPONSE_CACHE_TTL_SECONDS)
+  ) {
+    return undefined;
+  }
+
+  const headers: Record<string, string> = {
+    [RESPONSE_CACHE_HEADER]: "true",
+  };
+  if (ttlSeconds !== undefined) {
+    headers[RESPONSE_CACHE_TTL_HEADER] = String(ttlSeconds);
+  }
+  if (clear === true) {
+    headers[RESPONSE_CACHE_CLEAR_HEADER] = "true";
+  }
+  return headers;
+}
+
+function mergeResponseCacheHeaders(
+  options: Parameters<StreamFn>[2],
+  responseCacheHeaders: Record<string, string> | undefined,
+): Parameters<StreamFn>[2] {
+  if (!responseCacheHeaders) {
+    return options;
+  }
+  const currentHeaders = options?.headers;
+  const headers = { ...currentHeaders };
+  for (const [name, value] of Object.entries(responseCacheHeaders)) {
+    if (getHeaderCaseInsensitive(currentHeaders, name) === undefined) {
+      headers[name] = value;
+    }
+  }
+  return {
+    ...options,
+    headers,
+  };
 }
 
 function isOpenRouterAnthropicModelId(modelId: unknown): boolean {
@@ -97,6 +216,25 @@ function injectOpenRouterRouting(
     );
 }
 
+function injectOpenRouterResponseCache(
+  baseStreamFn: StreamFn | undefined,
+  extraParams: Record<string, unknown> | undefined,
+): StreamFn | undefined {
+  const responseCacheHeaders = resolveOpenRouterResponseCacheHeaders(extraParams);
+  if (!responseCacheHeaders) {
+    return baseStreamFn;
+  }
+  return (model, context, options) =>
+    (
+      baseStreamFn ??
+      ((nextModel) => {
+        throw new Error(
+          `OpenRouter response-cache wrapper requires an underlying streamFn for ${nextModel.id}.`,
+        );
+      })
+    )(model, context, mergeResponseCacheHeaders(options, responseCacheHeaders));
+}
+
 function createOpenRouterAnthropicPrefillWrapper(baseStreamFn: StreamFn | undefined): StreamFn {
   return createPayloadPatchStreamWrapper(
     baseStreamFn,
@@ -138,16 +276,17 @@ export function wrapOpenRouterProviderStream(
   const routedStreamFn = providerRouting
     ? injectOpenRouterRouting(ctx.streamFn, providerRouting)
     : ctx.streamFn;
+  const responseCacheStreamFn = injectOpenRouterResponseCache(routedStreamFn, ctx.extraParams);
   const wrapStreamFn = OPENROUTER_THINKING_STREAM_HOOKS.wrapStreamFn ?? undefined;
   if (!wrapStreamFn) {
     return createOpenRouterAnthropicPrefillWrapper(
-      createOpenRouterDeepSeekV4ThinkingWrapper(routedStreamFn, ctx.thinkingLevel),
+      createOpenRouterDeepSeekV4ThinkingWrapper(responseCacheStreamFn, ctx.thinkingLevel),
     );
   }
   const wrappedStreamFn =
     wrapStreamFn({
       ...ctx,
-      streamFn: routedStreamFn,
+      streamFn: responseCacheStreamFn,
       thinkingLevel: isOpenRouterProxyReasoningUnsupportedModel(ctx.modelId)
         ? undefined
         : ctx.thinkingLevel,
@@ -162,6 +301,7 @@ export const __testing = {
   isOpenRouterAnthropicModelId,
   isOpenRouterReasoningPayloadEnabled,
   isVerifiedOpenRouterRoute,
+  resolveOpenRouterResponseCacheHeaders,
   shouldPatchDeepSeekV4OpenRouterPayload,
   shouldPatchAnthropicOpenRouterPayload,
 };
