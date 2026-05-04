@@ -30,8 +30,11 @@ export function renderChatSessionSelect(
   const selectedSessionLabel =
     sessionGroups.flatMap((group) => group.options).find((entry) => entry.key === state.sessionKey)
       ?.label ?? state.sessionKey;
+  const flashSession = state.sessionSwitchFlashKey === state.sessionKey;
   return html`
-    <div class="chat-controls__session-row">
+    <div
+      class="chat-controls__session-row ${flashSession ? "chat-controls__session-row--flash" : ""}"
+    >
       <label class="field chat-controls__session">
         <select
           .value=${state.sessionKey}
