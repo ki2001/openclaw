@@ -2,6 +2,10 @@ import type { AgentMessage } from "@mariozechner/pi-agent-core";
 import type { AssistantMessage, UserMessage, Usage } from "@mariozechner/pi-ai";
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  sanitizeProviderReplayHistoryWithPlugin,
+  validateProviderReplayTurnsWithPlugin,
+} from "../plugins/provider-runtime.js";
+import {
   expectOpenAIResponsesStrictSanitizeCall,
   loadSanitizeSessionHistoryWithCleanMocks,
   makeMockSessionManager,
@@ -322,6 +326,36 @@ describe("sanitizeSessionHistory", () => {
     expect(
       sessionEntries.some((entry) => entry.customType === "google-turn-ordering-bootstrap"),
     ).toBe(true);
+  });
+
+  it("passes prepared provider runtime handles to provider replay hooks", async () => {
+    const runtimeHandle = {
+      provider: "google-vertex",
+      plugin: {},
+    } as never;
+
+    await sanitizeSessionHistory({
+      messages: mockMessages,
+      modelApi: "google-generative-ai",
+      provider: "google-vertex",
+      sessionManager: mockSessionManager,
+      sessionId: TEST_SESSION_ID,
+      runtimeHandle,
+    });
+    expect(sanitizeProviderReplayHistoryWithPlugin).toHaveBeenLastCalledWith(
+      expect.objectContaining({ runtimeHandle }),
+    );
+
+    await validateReplayTurns({
+      messages: mockMessages,
+      modelApi: "google-generative-ai",
+      provider: "google-vertex",
+      sessionId: TEST_SESSION_ID,
+      runtimeHandle,
+    });
+    expect(validateProviderReplayTurnsWithPlugin).toHaveBeenLastCalledWith(
+      expect.objectContaining({ runtimeHandle }),
+    );
   });
 
   it("passes simple user-only history through for Mistral models", async () => {

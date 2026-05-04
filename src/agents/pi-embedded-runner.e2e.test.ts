@@ -130,6 +130,40 @@ const installRunEmbeddedMocks = () => {
       ...actual,
       resolveModelAsync: (...args: Parameters<typeof resolveModelAsyncMock>) =>
         resolveModelAsyncMock(...args),
+      preparePreparedRuntimeModelAsync: async (
+        _provider: string,
+        agentDirArg?: string,
+        cfg?: unknown,
+        options?: {
+          workspaceDir?: string;
+          providerDiscoveryProviderIds?: readonly string[];
+          providerDiscoveryTimeoutMs?: number;
+          providerDiscoveryEntriesOnly?: boolean;
+        },
+      ) =>
+        ensureOpenClawModelsJsonMock(cfg, agentDirArg, {
+          ...(options?.workspaceDir ? { workspaceDir: options.workspaceDir } : {}),
+          ...(options?.providerDiscoveryProviderIds
+            ? { providerDiscoveryProviderIds: options.providerDiscoveryProviderIds }
+            : {}),
+          ...(options?.providerDiscoveryTimeoutMs !== undefined
+            ? { providerDiscoveryTimeoutMs: options.providerDiscoveryTimeoutMs }
+            : {}),
+          ...(options?.providerDiscoveryEntriesOnly === true
+            ? { providerDiscoveryEntriesOnly: true }
+            : {}),
+        }),
+      resolvePreparedRuntimeModelAsync: (
+        provider: string,
+        modelId: string,
+        agentDirArg?: string,
+        cfg?: unknown,
+        options?: Record<string, unknown>,
+      ) =>
+        resolveModelAsyncMock(provider, modelId, agentDirArg, cfg, {
+          ...options,
+          skipPiDiscovery: true,
+        }),
     };
   });
   vi.doMock("./pi-embedded-runner/run/auth-controller.js", () => ({
@@ -319,6 +353,42 @@ describe("runEmbeddedPiAgent", () => {
     expect(resolveModelAsyncMock).toHaveBeenCalledWith(
       "openrouter",
       "openrouter/auto",
+      agentDir,
+      cfg,
+      expect.objectContaining({ skipPiDiscovery: true }),
+    );
+    expect(ensureOpenClawModelsJsonMock).not.toHaveBeenCalled();
+  });
+
+  it("keeps prepared-runtime model resolution out of the reply path for configured providers", async () => {
+    const sessionFile = nextSessionFile();
+    const cfg = createEmbeddedPiRunnerOpenAiConfig(["gpt-5.4"]);
+    runEmbeddedAttemptMock.mockResolvedValueOnce(
+      makeEmbeddedRunnerAttempt({
+        assistantTexts: ["ok"],
+        lastAssistant: buildEmbeddedRunnerAssistant({
+          content: [{ type: "text", text: "ok" }],
+        }),
+      }),
+    );
+
+    await runEmbeddedPiAgent({
+      sessionId: "scoped-models-json",
+      sessionFile,
+      workspaceDir,
+      config: cfg,
+      prompt: "hello",
+      provider: "openai-codex",
+      model: "gpt-5.4",
+      timeoutMs: 5_000,
+      agentDir,
+      runId: nextRunId("scoped-models-json"),
+      enqueue: immediateEnqueue,
+    });
+
+    expect(resolveModelAsyncMock).toHaveBeenCalledWith(
+      "openai-codex",
+      "gpt-5.4",
       agentDir,
       cfg,
       expect.objectContaining({ skipPiDiscovery: true }),

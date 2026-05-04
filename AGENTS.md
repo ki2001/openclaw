@@ -39,6 +39,7 @@ Telegraph style. Root rules only. Read scoped `AGENTS.md` before subtree work.
 - Gateway protocol changes: additive first; incompatible needs versioning/docs/client follow-through.
 - Config contract: exported types, schema/help, metadata, baselines, docs aligned. Retired public keys stay retired; compat in raw migration/doctor.
 - Direction: manifest-first control plane; targeted runtime loaders; no hidden contract bypasses; broad mutable registries transitional.
+- Request-time runtime resolution: when a path already knows the capability family, provider id, model ref, or attachment class, keep resolution scoped to that fact. Prefer prepared-runtime helpers, active/runtime registries, manifest/public-artifact lookups, single-provider resolvers, and lazy registry construction. Do not broad-load a whole provider/plugin family at request time just to find one explicit provider/model, and do not build multimodal/provider registries for document-only or otherwise non-participating paths.
 - Prompt cache: deterministic ordering for maps/sets/registries/plugin lists/files/network results before model/tool payloads. Preserve old transcript bytes when possible.
 
 ## Commands
