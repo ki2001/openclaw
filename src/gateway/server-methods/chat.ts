@@ -2639,9 +2639,7 @@ export const chatHandlers: GatewayRequestHandlers = {
               });
             }
           } else {
-            if (!hasBeforeAgentRunGate) {
-              void emitUserTranscriptUpdate();
-            }
+            void emitUserTranscriptUpdate();
           }
           if (!context.chatAbortedRuns.has(clientRunId)) {
             setGatewayDedupeEntry({

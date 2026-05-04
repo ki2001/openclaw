@@ -391,10 +391,6 @@ export async function appendBlockedUserMessageToSessionTranscript(params: {
   if (!sessionKey) {
     return { ok: false, reason: "missing sessionKey" };
   }
-  if (!params.originalText) {
-    return { ok: false, reason: "empty originalText" };
-  }
-
   const storePath = params.storePath ?? resolveDefaultSessionStorePath(params.agentId);
   const store = loadSessionStore(storePath, { skipCache: true });
   const normalizedKey = normalizeStoreSessionKey(sessionKey);
@@ -453,6 +449,8 @@ export async function appendBlockedUserMessageToSessionTranscript(params: {
         params.parentId !== undefined
           ? params.parentId
           : await readLatestTranscriptMessageId(sessionFile);
+      const originalBlockedContent =
+        params.originalText.length > 0 ? [{ type: "text", text: params.originalText }] : [];
       const jsonlEntry: Record<string, unknown> = {
         type: "message",
         id: messageId,
@@ -465,7 +463,7 @@ export async function appendBlockedUserMessageToSessionTranscript(params: {
           ...(explicitIdempotencyKey ? { idempotencyKey: explicitIdempotencyKey } : {}),
         },
         originalBlockedContent: {
-          content: [{ type: "text", text: params.originalText }],
+          content: originalBlockedContent,
           blockedBy: params.pluginId,
           reason: params.reason,
           blockedAt: nowMs,

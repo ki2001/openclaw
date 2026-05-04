@@ -248,6 +248,28 @@ describe("appendAssistantMessageToSessionTranscript", () => {
     emitSpy.mockRestore();
   });
 
+  it("persists attachment-only blocked user messages without original text content", async () => {
+    writeTranscriptStore();
+
+    const result = await appendBlockedUserMessageToSessionTranscript({
+      sessionKey,
+      originalText: "",
+      redactedText: "The agent cannot read this message.",
+      pluginId: "policy-plugin",
+      reason: "attachment blocked",
+      storePath: fixture.storePath(),
+      updateMode: "file-only",
+    });
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      const lines = fs.readFileSync(result.sessionFile, "utf-8").trim().split("\n");
+      const messageLine = JSON.parse(lines[1]);
+      expect(messageLine.message.content[0].text).toBe("The agent cannot read this message.");
+      expect(messageLine.originalBlockedContent.content).toEqual([]);
+    }
+  });
+
   it("does not append a duplicate delivery mirror when the latest assistant message already matches", async () => {
     writeTranscriptStore();
 

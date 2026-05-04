@@ -48,6 +48,7 @@ const mockState = vi.hoisted(() => ({
   }>,
   dispatchError: null as Error | null,
   triggerAgentRunStart: false,
+  onAfterAgentRunStart: null as (() => void) | null,
   agentRunId: "run-agent-1",
   sessionEntry: {} as Record<string, unknown>,
   lastDispatchCtx: undefined as MsgContext | undefined,
@@ -177,6 +178,7 @@ vi.mock("../../auto-reply/dispatch.js", () => ({
       }
       if (mockState.triggerAgentRunStart) {
         params.replyOptions?.onAgentRunStart?.(mockState.agentRunId);
+        mockState.onAfterAgentRunStart?.();
       }
       if (mockState.dispatchedReplies.length > 0) {
         for (const reply of mockState.dispatchedReplies) {
@@ -532,6 +534,7 @@ describe("chat directive tag stripping for non-streaming final payloads", () => 
     mockState.dispatchError = null;
     mockState.mainSessionKey = "main";
     mockState.triggerAgentRunStart = false;
+    mockState.onAfterAgentRunStart = null;
     mockState.agentRunId = "run-agent-1";
     mockState.sessionEntry = {};
     mockState.lastDispatchCtx = undefined;
@@ -2142,6 +2145,15 @@ describe("chat directive tag stripping for non-streaming final payloads", () => 
     mockState.finalText = "ok";
     mockState.triggerAgentRunStart = true;
     mockState.hasBeforeAgentRunHooks = true;
+    let userUpdateCountAtAgentStart = 0;
+    mockState.onAfterAgentRunStart = () => {
+      userUpdateCountAtAgentStart = mockState.emittedTranscriptUpdates.filter(
+        (update) =>
+          typeof update.message === "object" &&
+          update.message !== null &&
+          (update.message as { role?: unknown }).role === "user",
+      ).length;
+    };
     const respond = vi.fn();
     const context = createChatContext();
 
@@ -2153,13 +2165,22 @@ describe("chat directive tag stripping for non-streaming final payloads", () => 
       expectBroadcast: false,
     });
 
+    expect(userUpdateCountAtAgentStart).toBe(0);
     const userUpdate = mockState.emittedTranscriptUpdates.find(
       (update) =>
         typeof update.message === "object" &&
         update.message !== null &&
         (update.message as { role?: unknown }).role === "user",
     );
-    expect(userUpdate).toBeUndefined();
+    expect(userUpdate).toMatchObject({
+      sessionFile: expect.stringMatching(/sess\.jsonl$/),
+      sessionKey: "main",
+      message: {
+        role: "user",
+        content: "secret prompt that may be blocked",
+        timestamp: expect.any(Number),
+      },
+    });
   });
 
   it("adds persisted media paths to the user transcript update", async () => {

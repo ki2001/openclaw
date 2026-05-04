@@ -300,8 +300,7 @@ class ChatController(
         session.sendNodeEvent("chat.subscribe", """{"sessionKey":"$key"}""")
       }
 
-      val historyJson =
-        session.request("chat.history", """{"sessionKey":"$key","includeBlockedOriginalContent":true}""")
+      val historyJson = requestChatHistoryJson(key)
       val history = parseHistory(historyJson, sessionKey = key, previousMessages = _messages.value)
       _messages.value = history.messages
       _sessionId.value = history.sessionId
@@ -332,6 +331,33 @@ class ChatController(
     } catch (_: Throwable) {
       // best-effort
     }
+  }
+
+  private suspend fun requestChatHistoryJson(sessionKey: String): String {
+    val params =
+      buildJsonObject {
+        put("sessionKey", JsonPrimitive(sessionKey))
+        put("includeBlockedOriginalContent", JsonPrimitive(true))
+      }
+    val response = session.requestDetailed("chat.history", params.toString())
+    if (response.ok) return response.payloadJson ?: ""
+    val error = response.error
+    if (
+      error?.code == "INVALID_REQUEST" &&
+        error.message.contains("includeBlockedOriginalContent")
+    ) {
+      val legacyParams =
+        buildJsonObject {
+          put("sessionKey", JsonPrimitive(sessionKey))
+        }
+      val legacyResponse = session.requestDetailed("chat.history", legacyParams.toString())
+      if (legacyResponse.ok) return legacyResponse.payloadJson ?: ""
+      val legacyError = legacyResponse.error
+      throw IllegalStateException(
+        "${legacyError?.code ?: "UNAVAILABLE"}: ${legacyError?.message ?: "request failed"}",
+      )
+    }
+    throw IllegalStateException("${error?.code ?: "UNAVAILABLE"}: ${error?.message ?: "request failed"}")
   }
 
   private suspend fun pollHealthIfNeeded(force: Boolean) {
@@ -376,11 +402,7 @@ class ChatController(
         _streamingAssistantText.value = null
         scope.launch {
           try {
-            val historyJson =
-              session.request(
-                "chat.history",
-                """{"sessionKey":"${_sessionKey.value}","includeBlockedOriginalContent":true}""",
-              )
+            val historyJson = requestChatHistoryJson(_sessionKey.value)
             val history = parseHistory(historyJson, sessionKey = _sessionKey.value, previousMessages = _messages.value)
             _messages.value = history.messages
             _sessionId.value = history.sessionId
