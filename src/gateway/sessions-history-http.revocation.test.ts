@@ -16,6 +16,7 @@ let gatewayConfig: {
   webchat: { chatHistoryMaxChars: 2000 },
 };
 let authCheckCalls = 0;
+let currentScopes = ["operator.read"];
 
 vi.mock("../config/config.js", () => ({
   getRuntimeConfig: () => ({
@@ -43,7 +44,7 @@ vi.mock("./http-utils.js", () => ({
     const value = req.headers[name.toLowerCase()];
     return Array.isArray(value) ? value[0] : value;
   },
-  resolveTrustedHttpOperatorScopes: () => ["operator.read"],
+  resolveTrustedHttpOperatorScopes: () => currentScopes,
   authorizeScopedGatewayHttpRequestOrReply: async () => ({
     cfg: { gateway: { webchat: { chatHistoryMaxChars: 2000 } } },
     requestAuth: { trustDeclaredOperatorScopes: true },
@@ -166,6 +167,7 @@ afterEach(() => {
   transcriptUpdateHandler = undefined;
   authRevoked = false;
   authCheckCalls = 0;
+  currentScopes = ["operator.read"];
   gatewayConfig = {
     trustedProxies: ["10.0.0.1"],
     allowRealIpFallback: false,
@@ -201,6 +203,44 @@ describe("session history SSE auth revocation", () => {
     const joined = res.writes.join("");
     expect(joined).not.toContain("event: message");
     expect(joined).not.toContain("post-revocation secret");
+    expect(res.writableEnded).toBe(true);
+  });
+
+  it("closes original-content streams when admin scope is downgraded", async () => {
+    currentScopes = ["operator.read", "operator.admin"];
+    const req = new MockReq("/sessions/agent%3Amain/history?includeBlockedOriginalContent=true");
+    const res = new MockRes();
+
+    const handled = await handleSessionHistoryHttpRequest(
+      req as unknown as IncomingMessage,
+      res as unknown as ServerResponse,
+      { auth: { mode: "trusted-proxy" } as never },
+    );
+
+    expect(handled).toBe(true);
+    expect(transcriptUpdateHandler).toBeTypeOf("function");
+
+    currentScopes = ["operator.read"];
+
+    transcriptUpdateHandler?.({
+      sessionFile: "/tmp/session-1.jsonl",
+      message: {
+        role: "user",
+        content: [{ type: "text", text: "The agent cannot read this message." }],
+        __openclaw: {
+          originalBlockedContent: {
+            content: [{ type: "text", text: "secret blocked prompt" }],
+          },
+        },
+      },
+      messageId: "blocked-1",
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    const joined = res.writes.join("");
+    expect(joined).not.toContain("event: message");
+    expect(joined).not.toContain("secret blocked prompt");
     expect(res.writableEnded).toBe(true);
   });
 

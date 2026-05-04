@@ -4692,7 +4692,7 @@ public struct PluginApprovalRequestParams: Codable, Sendable {
         turnsourceto: String?,
         turnsourceaccountid: String?,
         turnsourcethreadid: AnyCodable?,
-        alloweddecisions: [String]?,
+        alloweddecisions: [String]? = nil,
         timeoutms: Int?,
         twophase: Bool?)
     {
@@ -5006,7 +5006,7 @@ public struct ChatHistoryParams: Codable, Sendable {
         sessionkey: String,
         limit: Int?,
         maxchars: Int?,
-        includeblockedoriginalcontent: Bool?)
+        includeblockedoriginalcontent: Bool? = nil)
     {
         self.sessionkey = sessionkey
         self.limit = limit

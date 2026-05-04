@@ -254,7 +254,10 @@ export function createHookRunner(
 ) {
   const logger = options.logger;
   const catchErrors = options.catchErrors ?? true;
-  const failurePolicyByHook = options.failurePolicyByHook ?? {};
+  const failurePolicyByHook = {
+    before_agent_run: "fail-closed",
+    ...options.failurePolicyByHook,
+  } satisfies Partial<Record<PluginHookName, HookFailurePolicy>>;
   const voidHookTimeoutMsByHook = {
     ...DEFAULT_VOID_HOOK_TIMEOUT_MS_BY_HOOK,
     ...options.voidHookTimeoutMsByHook,

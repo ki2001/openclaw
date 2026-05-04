@@ -173,6 +173,23 @@ describe("before_agent_run hook", () => {
     });
   });
 
+  it("fails closed when handlers throw", async () => {
+    const registry = makeRegistry([
+      {
+        pluginId: "throwing-plugin",
+        hookName: "before_agent_run",
+        handler: async () => {
+          throw new Error("policy unavailable");
+        },
+        source: "test",
+      },
+    ]);
+    const runner = createHookRunner(registry);
+    await expect(runner.runBeforeAgentRun({ prompt: "test", messages: [] }, ctx)).rejects.toThrow(
+      "before_agent_run handler from throwing-plugin failed: policy unavailable",
+    );
+  });
+
   it("receives the correct event payload", async () => {
     let receivedEvent: unknown;
     const registry = makeRegistry([

@@ -14,7 +14,7 @@ struct ExecApprovalPromptRequest: Codable {
     var agentId: String?
     var resolvedPath: String?
     var sessionKey: String?
-    var allowedDecisions: [ExecApprovalDecision]?
+    var allowedDecisions: [ExecApprovalDecision]? = nil
 }
 
 private struct ExecApprovalSocketRequest: Codable {

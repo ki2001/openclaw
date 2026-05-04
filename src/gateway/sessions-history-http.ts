@@ -304,6 +304,9 @@ export async function handleSessionHistoryHttpRequest(
       return false;
     }
     const requestedScopes = resolveTrustedHttpOperatorScopes(req, currentRequestAuth.requestAuth);
+    if (includeBlockedOriginalContent && !requestedScopes.includes(ADMIN_SCOPE)) {
+      return false;
+    }
     return authorizeOperatorScopesForMethod("chat.history", requestedScopes).allowed;
   };
 
