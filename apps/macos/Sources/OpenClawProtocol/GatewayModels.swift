@@ -5000,21 +5000,25 @@ public struct ChatHistoryParams: Codable, Sendable {
     public let sessionkey: String
     public let limit: Int?
     public let maxchars: Int?
+    public let includeblockedoriginalcontent: Bool?
 
     public init(
         sessionkey: String,
         limit: Int?,
-        maxchars: Int?)
+        maxchars: Int?,
+        includeblockedoriginalcontent: Bool?)
     {
         self.sessionkey = sessionkey
         self.limit = limit
         self.maxchars = maxchars
+        self.includeblockedoriginalcontent = includeblockedoriginalcontent
     }
 
     private enum CodingKeys: String, CodingKey {
         case sessionkey = "sessionKey"
         case limit
         case maxchars = "maxChars"
+        case includeblockedoriginalcontent = "includeBlockedOriginalContent"
     }
 }
 

@@ -23,7 +23,7 @@ import {
   getHeader,
   resolveTrustedHttpOperatorScopes,
 } from "./http-utils.js";
-import { authorizeOperatorScopesForMethod } from "./method-scopes.js";
+import { ADMIN_SCOPE, authorizeOperatorScopesForMethod, WRITE_SCOPE } from "./method-scopes.js";
 import { DEFAULT_CHAT_HISTORY_TEXT_MAX_CHARS } from "./server-methods/chat.js";
 import {
   buildSessionHistorySnapshot,
@@ -74,6 +74,18 @@ function resolveLimit(req: IncomingMessage): number | undefined {
     return 1;
   }
   return Math.min(MAX_SESSION_HISTORY_LIMIT, Math.max(1, value));
+}
+
+function shouldIncludeBlockedOriginalContent(
+  req: IncomingMessage,
+  requestAuth: Parameters<typeof resolveTrustedHttpOperatorScopes>[1],
+): boolean {
+  const raw = getRequestUrl(req).searchParams.get("includeBlockedOriginalContent");
+  if (raw !== "1" && raw !== "true") {
+    return false;
+  }
+  const scopes = resolveTrustedHttpOperatorScopes(req, requestAuth);
+  return scopes.includes(ADMIN_SCOPE) || scopes.includes(WRITE_SCOPE);
 }
 
 function canonicalizePath(value: string | undefined): string | undefined {
@@ -133,7 +145,8 @@ export async function handleSessionHistoryHttpRequest(
   if (!authResult) {
     return true;
   }
-  const { cfg } = authResult;
+  const { cfg, requestAuth } = authResult;
+  const includeBlockedOriginalContent = shouldIncludeBlockedOriginalContent(req, requestAuth);
 
   const target = resolveGatewaySessionStoreTarget({ cfg, key: sessionKey });
   const store = loadSessionStore(target.storePath);
@@ -160,7 +173,10 @@ export async function handleSessionHistoryHttpRequest(
           entry.sessionId,
           target.storePath,
           entry.sessionFile,
-          resolveSessionHistoryTailReadOptions(limit),
+          {
+            ...resolveSessionHistoryTailReadOptions(limit),
+            includeBlockedOriginalContent,
+          },
         )
       : undefined;
   // Cursor reads still need an arbitrary historical window. The common first
@@ -171,6 +187,7 @@ export async function handleSessionHistoryHttpRequest(
       ? await readSessionMessagesAsync(entry.sessionId, target.storePath, entry.sessionFile, {
           mode: "full",
           reason: "session history cursor pagination",
+          includeBlockedOriginalContent,
         })
       : []);
   const historySnapshot = buildSessionHistorySnapshot({
@@ -217,6 +234,7 @@ export async function handleSessionHistoryHttpRequest(
     maxChars: effectiveMaxChars,
     limit,
     cursor,
+    includeBlockedOriginalContent,
   });
   sentHistory = sseState.snapshot();
   setSseHeaders(res);

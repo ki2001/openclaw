@@ -805,6 +805,10 @@ export type PluginHookBeforeAgentRunEvent = {
   prompt: string;
   /** Full session messages loaded so far (for context-aware checks). */
   messages: unknown[];
+  /** Active system prompt prepared for this run. */
+  systemPrompt?: string;
+  /** Account identity when available. */
+  accountId?: string;
   /** Channel the message came from. */
   channelId?: string;
   /** Sender identity when available. */

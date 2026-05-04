@@ -369,6 +369,27 @@ function createScopedCliClient(
   };
 }
 
+async function runChatHistory(params: {
+  client?: unknown;
+  requestParams?: Record<string, unknown>;
+}) {
+  const respond = vi.fn();
+  await chatHandlers["chat.history"]({
+    params: {
+      sessionKey: "main",
+      limit: 200,
+      ...params.requestParams,
+    },
+    respond: respond as unknown as Parameters<(typeof chatHandlers)["chat.history"]>[0]["respond"],
+    req: {} as never,
+    client: (params.client ?? null) as never,
+    isWebchatConnect: () => false,
+    context: createChatContext() as GatewayRequestContext,
+  });
+  expect(respond).toHaveBeenCalledWith(true, expect.anything());
+  return respond.mock.calls[0]?.[1] as { messages?: unknown[] };
+}
+
 function createChatContext(): Pick<
   GatewayRequestContext,
   | "broadcast"
@@ -523,6 +544,65 @@ describe("chat directive tag stripping for non-streaming final payloads", () => 
     mockState.stagedRelativePaths = null;
     mockState.unstagedSources = null;
     mockState.deleteMediaBufferCalls = [];
+  });
+
+  it("includes blocked original content for scoped chat history callers", async () => {
+    createTranscriptFixture("openclaw-chat-history-blocked-original-");
+    fs.writeFileSync(
+      mockState.transcriptPath,
+      [
+        {
+          type: "session",
+          version: CURRENT_SESSION_VERSION,
+          id: mockState.sessionId,
+          timestamp: new Date(0).toISOString(),
+          cwd: "/tmp",
+        },
+        {
+          type: "message",
+          id: "blocked-1",
+          parentId: null,
+          message: {
+            role: "user",
+            content: [{ type: "text", text: "The agent cannot read this message." }],
+            timestamp: 1,
+          },
+          originalBlockedContent: {
+            content: [{ type: "text", text: "secret blocked prompt" }],
+            blockedBy: "policy-plugin",
+            reason: "blocked by policy",
+            blockedAt: 1,
+          },
+        },
+      ]
+        .map((line) => JSON.stringify(line))
+        .join("\n") + "\n",
+      "utf-8",
+    );
+
+    const scoped = await runChatHistory({
+      client: createScopedCliClient(["operator.write"]),
+      requestParams: { includeBlockedOriginalContent: true },
+    });
+    expect(
+      (
+        scoped.messages?.[0] as {
+          __openclaw?: { originalBlockedContent?: { content?: Array<{ text?: string }> } };
+        }
+      )?.__openclaw?.originalBlockedContent?.content?.[0]?.text,
+    ).toBe("secret blocked prompt");
+
+    const unscoped = await runChatHistory({
+      client: createScopedCliClient(["operator.read"]),
+      requestParams: { includeBlockedOriginalContent: true },
+    });
+    expect(
+      (
+        unscoped.messages?.[0] as {
+          __openclaw?: { originalBlockedContent?: unknown };
+        }
+      )?.__openclaw?.originalBlockedContent,
+    ).toBeUndefined();
   });
 
   it("registers tool-event recipients for clients advertising tool-events capability", async () => {

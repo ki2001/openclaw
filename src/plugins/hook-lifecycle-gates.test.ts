@@ -133,7 +133,7 @@ describe("before_agent_run hook", () => {
     expect(result).toBeUndefined();
   });
 
-  it("ignores invalid handler results", async () => {
+  it("fails closed on invalid handler results", async () => {
     const registry = makeRegistry([
       {
         pluginId: "invalid-plugin",
@@ -144,7 +144,13 @@ describe("before_agent_run hook", () => {
     ]);
     const runner = createHookRunner(registry);
     const result = await runner.runBeforeAgentRun({ prompt: "test", messages: [] }, ctx);
-    expect(result).toBeUndefined();
+    expect(result).toEqual({
+      decision: {
+        outcome: "block",
+        reason: "before_agent_run returned an invalid decision",
+      },
+      pluginId: "invalid-plugin",
+    });
   });
 
   it("receives the correct event payload", async () => {
@@ -179,7 +185,7 @@ describe("before_agent_run hook", () => {
   });
 });
 
-describe("before_agent_run unsupported ask outcome", () => {
+describe("before_agent_run invalid ask outcome", () => {
   it("fails closed when handler returns ask", async () => {
     const registry = makeRegistry([
       {
@@ -199,7 +205,7 @@ describe("before_agent_run unsupported ask outcome", () => {
     const result = await runner.runBeforeAgentRun({ prompt: "hello", messages: [] }, ctx);
     expect(result?.decision).toEqual({
       outcome: "block",
-      reason: "before_agent_run only supports pass/block decisions",
+      reason: "before_agent_run returned an invalid decision",
     });
     expect(result?.pluginId).toBe("test");
   });

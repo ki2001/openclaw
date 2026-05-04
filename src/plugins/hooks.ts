@@ -1016,16 +1016,15 @@ export function createHookRunner(
       ctx,
       {
         mergeResults: (_acc, next, reg) => {
-          if (!isHookDecision(next)) {
+          if (next === undefined || next === null) {
             return _acc;
           }
-          const normalized: InputGateDecision =
-            next.outcome === "ask"
-              ? {
-                  outcome: "block",
-                  reason: "before_agent_run only supports pass/block decisions",
-                }
-              : next;
+          const normalized: InputGateDecision = isHookDecision(next)
+            ? next
+            : {
+                outcome: "block",
+                reason: "before_agent_run returned an invalid decision",
+              };
           const merged =
             !_acc || (normalized.outcome === "block" && _acc.outcome !== "block")
               ? normalized

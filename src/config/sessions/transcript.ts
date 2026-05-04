@@ -401,7 +401,11 @@ export async function appendBlockedUserMessageToSessionTranscript(params: {
     ? await transcriptHasIdempotencyKey(sessionFile, explicitIdempotencyKey)
     : undefined;
   if (existingMessageId) {
-    return { ok: true, sessionFile, messageId: existingMessageId };
+    return {
+      ok: true,
+      sessionFile,
+      messageId: existingMessageId === true ? (explicitIdempotencyKey ?? "") : existingMessageId,
+    };
   }
 
   // Write the user message directly as a raw JSONL append (not via
@@ -440,20 +444,10 @@ export async function appendBlockedUserMessageToSessionTranscript(params: {
 
   switch (params.updateMode ?? "inline") {
     case "inline": {
-      const inlineMessage =
-        isRecord(jsonlEntry.message) && isRecord(jsonlEntry.originalBlockedContent)
-          ? {
-              ...jsonlEntry.message,
-              __openclaw: {
-                ...(isRecord(jsonlEntry.message.__openclaw) ? jsonlEntry.message.__openclaw : {}),
-                originalBlockedContent: jsonlEntry.originalBlockedContent,
-              },
-            }
-          : jsonlEntry.message;
       emitSessionTranscriptUpdate({
         sessionFile,
         sessionKey,
-        message: inlineMessage as Parameters<SessionManager["appendMessage"]>[0],
+        message: jsonlEntry.message as Parameters<SessionManager["appendMessage"]>[0],
         messageId,
       });
       break;

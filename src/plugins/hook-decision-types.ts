@@ -3,7 +3,7 @@
  * Core is outcome-agnostic — it handles the mechanics of each outcome
  * without knowing *why* the decision was made.
  */
-export type HookDecision = HookDecisionPass | HookDecisionBlock | HookDecisionAsk;
+export type HookDecision = HookDecisionPass | HookDecisionBlock;
 
 /** Content is fine. Proceed normally. */
 export type HookDecisionPass = {
@@ -11,7 +11,7 @@ export type HookDecisionPass = {
 };
 
 /** Default user-facing replacement message when a `block` decision omits one. */
-export const DEFAULT_BLOCK_MESSAGE = "This response was blocked by policy";
+export const DEFAULT_BLOCK_MESSAGE = "This request was blocked by policy";
 
 /**
  * Content is blocked. `reason` is internal; `message` is user-facing.
@@ -28,33 +28,6 @@ export type HookDecisionBlock = {
   metadata?: Record<string, unknown>;
 };
 
-/**
- * Content requires human approval before proceeding.
- * The pipeline pauses and an approval prompt is shown to the owner.
- * If denied (or on timeout with deny behavior), treated as block.
- */
-export type HookDecisionAsk = {
-  outcome: "ask";
-  /** Internal reason for logging/observability. Never shown to user. */
-  reason: string;
-  /** Title shown in the approval prompt. Should be short and clear. */
-  title: string;
-  /** Description shown in the approval prompt. */
-  description: string;
-  /** Visual severity hint for the UI. Default: "warning". */
-  severity?: "info" | "warning" | "critical";
-  /** How long to wait for user response in ms. Default: 120000. Max: 600000. */
-  timeoutMs?: number;
-  /** What happens on timeout. Default: "deny". */
-  timeoutBehavior?: "allow" | "deny";
-  /** Message shown to the user if denied. */
-  denialMessage?: string;
-  /** Plugin-defined category for analytics. */
-  category?: string;
-  /** Opaque metadata for the plugin's own use. Core does not interpret it. */
-  metadata?: Record<string, unknown>;
-};
-
 export function resolveBlockMessage(decision: HookDecisionBlock): string {
   return decision.message ?? DEFAULT_BLOCK_MESSAGE;
 }
@@ -62,13 +35,12 @@ export function resolveBlockMessage(decision: HookDecisionBlock): string {
 /** Outcome severity for most-restrictive-wins merging. Higher = more restrictive. */
 export const HOOK_DECISION_SEVERITY: Record<HookDecision["outcome"], number> = {
   pass: 0,
-  ask: 1,
   block: 2,
 };
 
 /**
  * Merge two HookDecisions using most-restrictive-wins semantics.
- * `block > ask > pass`
+ * `block > pass`
  */
 export function mergeHookDecisions(a: HookDecision | undefined, b: HookDecision): HookDecision {
   if (!a) {
@@ -85,7 +57,7 @@ export function isHookDecision(value: unknown): value is HookDecision {
     return false;
   }
   const v = value as Record<string, unknown>;
-  return v.outcome === "pass" || v.outcome === "block" || v.outcome === "ask";
+  return v.outcome === "pass" || v.outcome === "block";
 }
 
 /** Outcomes valid for input gates (before_agent_run). */
@@ -94,7 +66,7 @@ export type InputGateDecision = HookDecisionPass | HookDecisionBlock;
 /**
  * A gate hook decision paired with the pluginId that produced it.
  * Returned by gate hook runners so callers can
- * attribute approval requests and audit entries to the originating plugin.
+ * attribute blocked entries and audit events to the originating plugin.
  */
 export type GateHookResult<TDecision extends HookDecision = HookDecision> = {
   decision: TDecision;

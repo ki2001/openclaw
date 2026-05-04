@@ -605,7 +605,7 @@ export async function visitSessionMessagesAsync(
   storePath: string | undefined,
   sessionFile: string | undefined,
   visit: (message: unknown, seq: number) => void,
-  _opts: { mode: "full"; reason: string },
+  opts: { mode: "full"; reason: string; includeBlockedOriginalContent?: boolean },
 ): Promise<number> {
   const filePath = findExistingTranscriptPath(sessionId, storePath, sessionFile);
   if (!filePath) {

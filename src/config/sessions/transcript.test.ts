@@ -185,7 +185,7 @@ describe("appendAssistantMessageToSessionTranscript", () => {
     }
   });
 
-  it("emits blocked user inline updates with original content metadata", async () => {
+  it("emits blocked user inline updates without original content metadata", async () => {
     writeTranscriptStore();
     const emitSpy = vi.spyOn(transcriptEvents, "emitSessionTranscriptUpdate");
 
@@ -205,16 +205,12 @@ describe("appendAssistantMessageToSessionTranscript", () => {
         message: expect.objectContaining({
           role: "user",
           content: [{ type: "text", text: "Blocked by policy." }],
-          __openclaw: expect.objectContaining({
-            originalBlockedContent: expect.objectContaining({
-              content: [{ type: "text", text: "secret prompt" }],
-              blockedBy: "policy-plugin",
-              reason: "contains protected content",
-            }),
-          }),
         }),
       }),
     );
+    const payload = emitSpy.mock.calls[0]?.[0] as { message?: unknown } | undefined;
+    const meta = (payload?.message as { __openclaw?: unknown } | undefined)?.__openclaw;
+    expect(meta).toBeUndefined();
     emitSpy.mockRestore();
   });
 

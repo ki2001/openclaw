@@ -548,6 +548,10 @@ export function normalizeMessagesForLlmBoundary(messages: AgentMessage[]): Agent
   return stripRuntimeContextCustomMessages(normalized);
 }
 
+function cloneHookMessages(messages: AgentMessage[]): AgentMessage[] {
+  return messages.map((message) => structuredClone(message));
+}
+
 function isMidTurnPrecheckAssistantError(message: AgentMessage | undefined): boolean {
   if (!message || message.role !== "assistant") {
     return false;
@@ -2867,7 +2871,7 @@ export async function runEmbeddedAttempt(
                   systemPrompt: systemPromptForModel,
                   messages: beforeRunMessages,
                   channelId: hookCtx.channelId,
-                  accountId: hookCtx.accountId,
+                  accountId: params.agentAccountId ?? undefined,
                   senderId: params.senderId ?? undefined,
                   senderIsOwner: params.senderIsOwner ?? undefined,
                 },

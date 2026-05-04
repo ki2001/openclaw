@@ -78,7 +78,7 @@ import {
   cleanupManagedOutgoingImageRecords,
   createManagedOutgoingImageBlocks,
 } from "../managed-image-attachments.js";
-import { ADMIN_SCOPE } from "../method-scopes.js";
+import { ADMIN_SCOPE, WRITE_SCOPE } from "../method-scopes.js";
 import {
   GATEWAY_CLIENT_CAPS,
   GATEWAY_CLIENT_MODES,
@@ -757,6 +757,11 @@ function isAcpBridgeClient(client: GatewayRequestHandlerOptions["client"]): bool
 function canInjectSystemProvenance(client: GatewayRequestHandlerOptions["client"]): boolean {
   const scopes = Array.isArray(client?.connect?.scopes) ? client.connect.scopes : [];
   return scopes.includes(ADMIN_SCOPE);
+}
+
+function canIncludeBlockedOriginalContent(client: GatewayRequestHandlerOptions["client"]): boolean {
+  const scopes = Array.isArray(client?.connect?.scopes) ? client.connect.scopes : [];
+  return scopes.includes(ADMIN_SCOPE) || scopes.includes(WRITE_SCOPE);
 }
 
 async function persistChatSendImages(params: {
@@ -1712,7 +1717,7 @@ function broadcastChatError(params: {
 }
 
 export const chatHandlers: GatewayRequestHandlers = {
-  "chat.history": async ({ params, respond, context }) => {
+  "chat.history": async ({ params, respond, context, client }) => {
     if (!validateChatHistoryParams(params)) {
       respond(
         false,
@@ -1724,10 +1729,11 @@ export const chatHandlers: GatewayRequestHandlers = {
       );
       return;
     }
-    const { sessionKey, limit, maxChars } = params as {
+    const { sessionKey, limit, maxChars, includeBlockedOriginalContent } = params as {
       sessionKey: string;
       limit?: number;
       maxChars?: number;
+      includeBlockedOriginalContent?: boolean;
     };
     const { cfg, storePath, entry } = loadSessionEntry(sessionKey);
     const sessionId = entry?.sessionId;
@@ -1743,6 +1749,8 @@ export const chatHandlers: GatewayRequestHandlers = {
         ? await readRecentSessionMessagesAsync(sessionId, storePath, entry?.sessionFile, {
             maxMessages: max,
             maxBytes: Math.max(maxHistoryBytes * 2, 1024 * 1024),
+            includeBlockedOriginalContent:
+              includeBlockedOriginalContent === true && canIncludeBlockedOriginalContent(client),
           })
         : [];
     const rawMessages = augmentChatHistoryWithCliSessionImports({
