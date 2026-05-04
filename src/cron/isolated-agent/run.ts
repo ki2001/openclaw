@@ -1,4 +1,5 @@
 import { hasAnyAuthProfileStoreSource } from "../../agents/auth-profiles/source-check.js";
+import { resolveModelCatalogScope } from "../../agents/model-catalog-scope.js";
 import { retireSessionMcpRuntime } from "../../agents/pi-bundle-mcp-tools.js";
 import type { MessagingToolSend } from "../../agents/pi-embedded-messaging.types.js";
 import type { SkillSnapshot } from "../../agents/skills.js";
@@ -486,10 +487,17 @@ async function prepareCronRunContext(params: {
   let catalog: Awaited<ReturnType<CronModelCatalogRuntime["loadModelCatalog"]>> | undefined;
   const loadCatalog = async () => {
     if (!catalog) {
+      const scope = resolveModelCatalogScope({
+        cfg: cfgWithAgentDefaults,
+        provider,
+        model,
+      });
       catalog = await (
         await loadCronModelCatalogRuntime()
       ).loadModelCatalog({
         config: cfgWithAgentDefaults,
+        providerRefs: scope.providerRefs,
+        modelRefs: scope.modelRefs,
       });
     }
     return catalog;

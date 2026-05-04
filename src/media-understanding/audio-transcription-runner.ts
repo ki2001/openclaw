@@ -23,7 +23,9 @@ export async function runAudioTranscription(params: {
     return { transcript: undefined, attachments };
   }
 
-  const providerRegistry = buildProviderRegistry(params.providers, params.cfg);
+  const providerRegistry = buildProviderRegistry(params.providers, params.cfg, {
+    providerIds: params.activeModel?.provider ? [params.activeModel.provider] : [],
+  });
   const cache = createMediaAttachmentCache(attachments, {
     ...(params.localPathRoots ? { localPathRoots: params.localPathRoots } : {}),
     ssrfPolicy: params.cfg.tools?.web?.fetch?.ssrfPolicy,

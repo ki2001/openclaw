@@ -47,6 +47,9 @@ export type ApplyMediaUnderstandingResult = {
   appliedFile: boolean;
 };
 
+const PDF_EXTRACTION_UNAVAILABLE_PLACEHOLDER =
+  "[PDF attachment available; pre-extraction unavailable. Use the PDF attachment reference in the media note above if you need to inspect it directly.]";
+
 const CAPABILITY_ORDER: MediaUnderstandingCapability[] = ["image", "audio", "video"];
 const EMPTY_VOICE_NOTE_PLACEHOLDER =
   "[Voice note could not be transcribed because the audio attachment was too small]";
@@ -493,6 +496,17 @@ async function extractFileBlocks(params: {
         config: cfg,
       });
     } catch (err) {
+      if (mimeType === "application/pdf") {
+        blocks.push(
+          renderFileContextBlock({
+            filename: bufferResult.fileName,
+            fallbackName: `file-${attachment.index + 1}`,
+            mimeType,
+            content: PDF_EXTRACTION_UNAVAILABLE_PLACEHOLDER,
+          }),
+        );
+        continue;
+      }
       if (shouldLogVerbose()) {
         logVerbose(`media: file attachment skipped (extract): ${String(err)}`);
       }
@@ -534,7 +548,13 @@ export async function applyMediaUnderstanding(params: {
       .find((value) => value && value.trim()) ?? undefined;
 
   const attachments = normalizeMediaAttachments(ctx);
-  const providerRegistry = buildProviderRegistry(params.providers, cfg);
+  let providerRegistry: Map<string, MediaUnderstandingProvider> | null = null;
+  const getProviderRegistry = () => {
+    providerRegistry ??= buildProviderRegistry(params.providers, cfg, {
+      providerIds: params.activeModel?.provider ? [params.activeModel.provider] : [],
+    });
+    return providerRegistry;
+  };
   const cache = createMediaAttachmentCache(attachments, {
     localPathRoots: resolveMediaAttachmentLocalRoots({ cfg, ctx }),
     ssrfPolicy: cfg.tools?.web?.fetch?.ssrfPolicy,
@@ -551,7 +571,7 @@ export async function applyMediaUnderstanding(params: {
         attachments: cache,
         media: attachments,
         agentDir: params.agentDir,
-        providerRegistry,
+        providerRegistry: getProviderRegistry,
         config,
         activeModel: params.activeModel,
       });

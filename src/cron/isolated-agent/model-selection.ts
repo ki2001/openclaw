@@ -3,12 +3,16 @@ import type { CronJob } from "../types.js";
 import {
   DEFAULT_MODEL,
   DEFAULT_PROVIDER,
+  buildModelAliasIndex,
   getModelRefStatus,
+  inferUniqueProviderFromConfiguredModels,
   loadModelCatalog,
   normalizeModelSelection,
   resolveAllowedModelRef,
   resolveConfiguredModelRef,
   resolveHooksGmailModel,
+  resolveModelCatalogScope,
+  resolveModelRefFromString,
 } from "./run-model-selection.runtime.js";
 
 type CronSessionModelOverrides = {
@@ -61,12 +65,76 @@ export async function resolveCronModelSelection(
   let provider = resolvedDefault.provider;
   let model = resolvedDefault.model;
 
-  let catalog: Awaited<ReturnType<typeof loadModelCatalog>> | undefined;
-  const loadCatalogOnce = async () => {
-    if (!catalog) {
-      catalog = await loadModelCatalog({ config: params.cfgWithAgentDefaults });
+  let catalog: Awaited<ReturnType<typeof loadModelCatalog>> = [];
+  let loadedFullCatalog = false;
+  const loadedCatalogScopeKeys = new Set<string>();
+  const appendCatalog = (entries: Awaited<ReturnType<typeof loadModelCatalog>>) => {
+    const seen = new Set(catalog.map((entry) => `${entry.provider}/${entry.id}`));
+    for (const entry of entries) {
+      const key = `${entry.provider}/${entry.id}`;
+      if (seen.has(key)) {
+        continue;
+      }
+      seen.add(key);
+      catalog.push(entry);
+    }
+  };
+  const loadCatalogOnce = async (scope?: { providerRefs: string[]; modelRefs: string[] }) => {
+    if (loadedFullCatalog) {
+      return catalog;
+    }
+    if (!scope) {
+      catalog = await loadModelCatalog({
+        config: params.cfgWithAgentDefaults,
+      });
+      loadedFullCatalog = true;
+      return catalog;
+    }
+    const scopeKey = JSON.stringify({
+      providerRefs: scope.providerRefs,
+      modelRefs: scope.modelRefs,
+    });
+    if (!loadedCatalogScopeKeys.has(scopeKey)) {
+      loadedCatalogScopeKeys.add(scopeKey);
+      appendCatalog(
+        await loadModelCatalog({
+          config: params.cfgWithAgentDefaults,
+          providerRefs: scope.providerRefs,
+          modelRefs: scope.modelRefs,
+        }),
+      );
     }
     return catalog;
+  };
+  const resolveRawCatalogScope = (raw: string) => {
+    const trimmed = raw.trim();
+    if (!trimmed) {
+      return undefined;
+    }
+    const defaultProvider = !trimmed.includes("/")
+      ? (inferUniqueProviderFromConfiguredModels({
+          cfg: params.cfgWithAgentDefaults,
+          model: trimmed,
+        }) ?? resolvedDefault.provider)
+      : resolvedDefault.provider;
+    const aliasIndex = buildModelAliasIndex({
+      cfg: params.cfgWithAgentDefaults,
+      defaultProvider,
+    });
+    const resolved = resolveModelRefFromString({
+      cfg: params.cfgWithAgentDefaults,
+      raw: trimmed,
+      defaultProvider,
+      aliasIndex,
+    });
+    if (!resolved) {
+      return undefined;
+    }
+    return resolveModelCatalogScope({
+      cfg: params.cfgWithAgentDefaults,
+      provider: resolved.ref.provider,
+      model: resolved.ref.model,
+    });
   };
 
   const subagentModelRaw =
@@ -76,7 +144,7 @@ export async function resolveCronModelSelection(
   if (subagentModelRaw) {
     const resolvedSubagent = resolveAllowedModelRef({
       cfg: params.cfgWithAgentDefaults,
-      catalog: await loadCatalogOnce(),
+      catalog: await loadCatalogOnce(resolveRawCatalogScope(subagentModelRaw)),
       raw: subagentModelRaw,
       defaultProvider: resolvedDefault.provider,
       defaultModel: resolvedDefault.model,
@@ -97,7 +165,13 @@ export async function resolveCronModelSelection(
   if (hooksGmailModelRef) {
     const status = getModelRefStatus({
       cfg: params.cfg,
-      catalog: await loadCatalogOnce(),
+      catalog: await loadCatalogOnce(
+        resolveModelCatalogScope({
+          cfg: params.cfgWithAgentDefaults,
+          provider: hooksGmailModelRef.provider,
+          model: hooksGmailModelRef.model,
+        }),
+      ),
       ref: hooksGmailModelRef,
       defaultProvider: resolvedDefault.provider,
       defaultModel: resolvedDefault.model,
@@ -114,7 +188,7 @@ export async function resolveCronModelSelection(
   if (modelOverride !== undefined && modelOverride.length > 0) {
     const resolvedOverride = resolveAllowedModelRef({
       cfg: params.cfgWithAgentDefaults,
-      catalog: await loadCatalogOnce(),
+      catalog: await loadCatalogOnce(resolveRawCatalogScope(modelOverride)),
       raw: modelOverride,
       defaultProvider: resolvedDefault.provider,
       defaultModel: resolvedDefault.model,
@@ -136,7 +210,13 @@ export async function resolveCronModelSelection(
         params.sessionEntry.providerOverride?.trim() || resolvedDefault.provider;
       const resolvedSessionOverride = resolveAllowedModelRef({
         cfg: params.cfgWithAgentDefaults,
-        catalog: await loadCatalogOnce(),
+        catalog: await loadCatalogOnce(
+          resolveModelCatalogScope({
+            cfg: params.cfgWithAgentDefaults,
+            provider: sessionProviderOverride,
+            model: sessionModelOverride,
+          }),
+        ),
         raw: `${sessionProviderOverride}/${sessionModelOverride}`,
         defaultProvider: resolvedDefault.provider,
         defaultModel: resolvedDefault.model,

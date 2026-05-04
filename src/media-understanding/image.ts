@@ -1,36 +1,21 @@
 import type { Api, Context, Model, ProviderStreamOptions } from "@mariozechner/pi-ai";
 import { complete } from "@mariozechner/pi-ai";
 import { isMinimaxVlmModel, minimaxUnderstandImage } from "../agents/minimax-vlm.js";
-import {
-  getApiKeyForModel,
-  requireApiKey,
-  resolveApiKeyForProvider,
-} from "../agents/model-auth.js";
-import { findNormalizedProviderValue, normalizeModelRef } from "../agents/model-selection.js";
-import { ensureOpenClawModelsJson } from "../agents/models-config.js";
-import { resolveModelWithRegistry } from "../agents/pi-embedded-runner/model.js";
+import { requireApiKey, resolveApiKeyForProvider } from "../agents/model-auth.js";
+import { normalizeModelRef } from "../agents/model-selection.js";
 import { resolveProviderRequestCapabilities } from "../agents/provider-attribution.js";
 import { registerProviderStreamForModel } from "../agents/provider-stream.js";
+import { prepareSimpleCompletionModel } from "../agents/simple-completion-runtime.js";
 import {
   coerceImageAssistantText,
   hasImageReasoningOnlyResponse,
 } from "../agents/tools/image-tool.helpers.js";
-import { prepareProviderDynamicModel } from "../plugins/provider-runtime.js";
 import type {
   ImageDescriptionRequest,
   ImageDescriptionResult,
   ImagesDescriptionRequest,
   ImagesDescriptionResult,
 } from "./types.js";
-
-let piModelDiscoveryRuntimePromise: Promise<
-  typeof import("../agents/pi-model-discovery-runtime.js")
-> | null = null;
-
-function loadPiModelDiscoveryRuntime() {
-  piModelDiscoveryRuntimePromise ??= import("../agents/pi-model-discovery-runtime.js");
-  return piModelDiscoveryRuntimePromise;
-}
 
 function resolveImageToolMaxTokens(modelMaxTokens: number | undefined, requestedMaxTokens = 4096) {
   if (
@@ -142,57 +127,21 @@ async function resolveImageRuntime(params: {
   preferredProfile?: string;
   authStore?: ImageDescriptionRequest["authStore"];
 }): Promise<{ apiKey: string; model: Model<Api> }> {
-  await ensureOpenClawModelsJson(params.cfg, params.agentDir);
-  const { discoverAuthStorage, discoverModels } = await loadPiModelDiscoveryRuntime();
-  const authStorage = discoverAuthStorage(params.agentDir);
-  const modelRegistry = discoverModels(authStorage, params.agentDir);
   const resolvedRef = normalizeModelRef(params.provider, params.model);
-  const configuredProviders = params.cfg.models?.providers;
-  const providerConfig =
-    configuredProviders?.[resolvedRef.provider] ??
-    findNormalizedProviderValue(configuredProviders, resolvedRef.provider);
-  // Fast path: resolve without dynamic model preparation first.
-  // This avoids unnecessary prepare hooks (e.g. OpenRouter catalog fetch)
-  // for models that are already explicitly resolvable.
-  let model = resolveModelWithRegistry({
+  const prepared = await prepareSimpleCompletionModel({
+    cfg: params.cfg,
     provider: resolvedRef.provider,
     modelId: resolvedRef.model,
-    modelRegistry,
-    cfg: params.cfg,
     agentDir: params.agentDir,
-  }) as Model<Api> | null;
-
-  // If the model is not in the registry yet, prepare dynamic provider models
-  // and retry (needed for provider-runtime-backed dynamic models).
-  if (!model) {
-    await prepareProviderDynamicModel({
-      provider: resolvedRef.provider,
-      config: params.cfg,
-      context: {
-        config: params.cfg,
-        agentDir: params.agentDir,
-        provider: resolvedRef.provider,
-        modelId: resolvedRef.model,
-        modelRegistry,
-        providerConfig,
-      },
-    });
-    model = resolveModelWithRegistry({
-      provider: resolvedRef.provider,
-      modelId: resolvedRef.model,
-      modelRegistry,
-      cfg: params.cfg,
-      agentDir: params.agentDir,
-    }) as Model<Api> | null;
+    profileId: params.profile,
+    preferredProfile: params.preferredProfile,
+    skipPiDiscovery: true,
+  });
+  if ("error" in prepared) {
+    throw new Error(prepared.error);
   }
-  if (!model) {
-    throw new Error(`Unknown model: ${resolvedRef.provider}/${resolvedRef.model}`);
-  }
+  const { model, auth } = prepared;
   if (!model.input?.includes("image")) {
-    // resolveModelWithRegistry may synthesize a text-only fallback for configured
-    // providers, which would change "Unknown model" → "Model does not support images"
-    // and skip the MiniMax VLM recovery path. Throw Unknown model for MiniMax VLM
-    // models so the caller can attempt the fallback.
     if (isMinimaxVlmModel(resolvedRef.provider, resolvedRef.model)) {
       throw new Error(`Unknown model: ${resolvedRef.provider}/${resolvedRef.model}`);
     }
@@ -201,17 +150,10 @@ async function resolveImageRuntime(params: {
         `(resolved ${model.provider}/${model.id} input: ${formatModelInputCapabilities(model.input)})`,
     );
   }
-  const apiKeyInfo = await getApiKeyForModel({
+  return {
+    apiKey: requireApiKey(auth, model.provider),
     model,
-    cfg: params.cfg,
-    agentDir: params.agentDir,
-    profileId: params.profile,
-    preferredProfile: params.preferredProfile,
-    store: params.authStore,
-  });
-  const apiKey = requireApiKey(apiKeyInfo, model.provider);
-  authStorage.setRuntimeApiKey(model.provider, apiKey);
-  return { apiKey, model };
+  };
 }
 
 function buildImageContext(

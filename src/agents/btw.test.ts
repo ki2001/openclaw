@@ -6,10 +6,7 @@ const readFileMock = vi.fn();
 const parseSessionEntriesMock = vi.fn();
 const migrateSessionEntriesMock = vi.fn();
 const buildSessionContextMock = vi.fn();
-const ensureOpenClawModelsJsonMock = vi.fn();
-const discoverAuthStorageMock = vi.fn();
-const discoverModelsMock = vi.fn();
-const resolveModelWithRegistryMock = vi.fn();
+const resolveModelAsyncMock = vi.fn();
 const getApiKeyForModelMock = vi.fn();
 const requireApiKeyMock = vi.fn();
 const resolveSessionAuthProfileOverrideMock = vi.fn();
@@ -43,17 +40,8 @@ vi.mock("@mariozechner/pi-coding-agent", () => ({
   parseSessionEntries: (...args: unknown[]) => parseSessionEntriesMock(...args),
 }));
 
-vi.mock("./models-config.js", () => ({
-  ensureOpenClawModelsJson: (...args: unknown[]) => ensureOpenClawModelsJsonMock(...args),
-}));
-
-vi.mock("./pi-model-discovery.js", () => ({
-  discoverAuthStorage: (...args: unknown[]) => discoverAuthStorageMock(...args),
-  discoverModels: (...args: unknown[]) => discoverModelsMock(...args),
-}));
-
 vi.mock("./pi-embedded-runner/model.js", () => ({
-  resolveModelWithRegistry: (...args: unknown[]) => resolveModelWithRegistryMock(...args),
+  resolveModelAsync: (...args: unknown[]) => resolveModelAsyncMock(...args),
 }));
 
 vi.mock("./model-auth.js", () => ({
@@ -285,10 +273,7 @@ describe("runBtwSideQuestion", () => {
     parseSessionEntriesMock.mockReset();
     migrateSessionEntriesMock.mockReset();
     buildSessionContextMock.mockReset();
-    ensureOpenClawModelsJsonMock.mockReset();
-    discoverAuthStorageMock.mockReset();
-    discoverModelsMock.mockReset();
-    resolveModelWithRegistryMock.mockReset();
+    resolveModelAsyncMock.mockReset();
     getApiKeyForModelMock.mockReset();
     requireApiKeyMock.mockReset();
     resolveSessionAuthProfileOverrideMock.mockReset();
@@ -318,10 +303,14 @@ describe("runBtwSideQuestion", () => {
     buildSessionContextMock.mockImplementation((entries: Array<{ message?: unknown }> = []) => {
       return { messages: entries.flatMap((entry) => (entry.message ? [entry.message] : [])) };
     });
-    resolveModelWithRegistryMock.mockReturnValue({
-      provider: "anthropic",
-      id: "claude-sonnet-4-6",
-      api: "anthropic-messages",
+    resolveModelAsyncMock.mockResolvedValue({
+      model: {
+        provider: "anthropic",
+        id: "claude-sonnet-4-6",
+        api: "anthropic-messages",
+      },
+      authStorage: {},
+      modelRegistry: {},
     });
     getApiKeyForModelMock.mockResolvedValue({ apiKey: "secret", mode: "api-key", source: "test" });
     requireApiKeyMock.mockReturnValue("secret");
@@ -420,11 +409,15 @@ describe("runBtwSideQuestion", () => {
   });
 
   it("applies provider runtime auth before streaming github-copilot BTW questions", async () => {
-    resolveModelWithRegistryMock.mockReturnValue({
-      provider: "github-copilot",
-      id: "gpt-5.4",
-      api: "openai-responses",
-      baseUrl: "https://api.individual.githubcopilot.com",
+    resolveModelAsyncMock.mockResolvedValue({
+      model: {
+        provider: "github-copilot",
+        id: "gpt-5.4",
+        api: "openai-responses",
+        baseUrl: "https://api.individual.githubcopilot.com",
+      },
+      authStorage: {},
+      modelRegistry: {},
     });
     getApiKeyForModelMock.mockResolvedValue({
       apiKey: "github-token",
@@ -475,11 +468,15 @@ describe("runBtwSideQuestion", () => {
     // bypassed the provider's createStreamFn/wrapStreamFn hooks. That caused
     // Ollama Cloud (api: "openai-completions", baseUrl: "https://ollama.com/")
     // to hit the marketing site instead of /v1/chat/completions.
-    resolveModelWithRegistryMock.mockReturnValue({
-      provider: "ollama",
-      id: "glm-5.1",
-      api: "openai-completions",
-      baseUrl: "https://ollama.com/",
+    resolveModelAsyncMock.mockResolvedValue({
+      model: {
+        provider: "ollama",
+        id: "glm-5.1",
+        api: "openai-completions",
+        baseUrl: "https://ollama.com/",
+      },
+      authStorage: {},
+      modelRegistry: {},
     });
     const providerStreamFn = vi
       .fn()
@@ -529,10 +526,14 @@ describe("runBtwSideQuestion", () => {
   });
 
   it("allows Bedrock /btw runs to proceed without a static api key in aws-sdk mode", async () => {
-    resolveModelWithRegistryMock.mockReturnValue({
-      provider: "amazon-bedrock",
-      id: "us.anthropic.claude-sonnet-4-5-v1:0",
-      api: "anthropic-messages",
+    resolveModelAsyncMock.mockResolvedValue({
+      model: {
+        provider: "amazon-bedrock",
+        id: "us.anthropic.claude-sonnet-4-5-v1:0",
+        api: "anthropic-messages",
+      },
+      authStorage: {},
+      modelRegistry: {},
     });
     getApiKeyForModelMock.mockResolvedValue({
       apiKey: undefined,

@@ -177,8 +177,8 @@ describe("session store strips resolvedSkills from persistence", () => {
   });
 });
 
-describe("embedded runner falls back to disk when resolvedSkills is absent", () => {
-  it("signals shouldLoadSkillEntries when the persisted snapshot has no resolvedSkills", () => {
+describe("embedded runner reuses persisted skill prompt snapshots", () => {
+  it("signals shouldLoadSkillEntries when the stripped snapshot has no prompt contract", () => {
     const result = resolveEmbeddedRunSkillEntries({
       workspaceDir: "/nonexistent-workspace-for-test",
       skillsSnapshot: {
@@ -190,6 +190,20 @@ describe("embedded runner falls back to disk when resolvedSkills is absent", () 
     });
 
     expect(result.shouldLoadSkillEntries).toBe(true);
+  });
+
+  it("skips loading when a persisted prompt snapshot is present", () => {
+    const result = resolveEmbeddedRunSkillEntries({
+      workspaceDir: "/nonexistent-workspace-for-test",
+      skillsSnapshot: {
+        prompt: "persisted prompt",
+        skills: [{ name: "x" }],
+        version: 1,
+      },
+    });
+
+    expect(result.shouldLoadSkillEntries).toBe(false);
+    expect(result.skillEntries).toEqual([]);
   });
 
   it("skips loading when resolvedSkills is present (in-turn cache hot path)", () => {

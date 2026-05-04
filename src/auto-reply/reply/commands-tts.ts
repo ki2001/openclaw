@@ -8,7 +8,7 @@ import {
 import {
   canonicalizeSpeechProviderId,
   getSpeechProvider,
-  listSpeechProviders,
+  listLoadedSpeechProviders,
 } from "../../tts/provider-registry.js";
 import {
   getResolvedSpeechProviderConfig,
@@ -325,7 +325,7 @@ export const handleTtsCommands: CommandHandler = async (params, allowTextCommand
   if (action === "provider") {
     const currentProvider = getTtsProvider(config, prefsPath);
     if (!args.trim()) {
-      const providers = listSpeechProviders(params.cfg);
+      const providers = listLoadedSpeechProviders(params.cfg);
       return {
         shouldContinue: false,
         reply: {

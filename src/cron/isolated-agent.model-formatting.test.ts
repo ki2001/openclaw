@@ -4,13 +4,19 @@ import { DEFAULT_MODEL, DEFAULT_PROVIDER } from "../agents/defaults.js";
 const {
   loadModelCatalogMock,
   getModelRefStatusMock,
+  inferUniqueProviderFromConfiguredModelsMock,
   normalizeModelSelectionMock,
+  resolveModelCatalogScopeMock,
+  resolveModelRefFromStringMock,
   resolveAllowedModelRefMock,
+  buildModelAliasIndexMock,
   resolveConfiguredModelRefMock,
   resolveHooksGmailModelMock,
 } = vi.hoisted(() => ({
   loadModelCatalogMock: vi.fn(),
   getModelRefStatusMock: vi.fn(),
+  inferUniqueProviderFromConfiguredModelsMock: vi.fn(() => undefined),
+  buildModelAliasIndexMock: vi.fn(() => ({ byAlias: new Map(), byKey: new Map() })),
   normalizeModelSelectionMock: vi.fn((value: unknown) => {
     if (typeof value === "string" && value.trim()) {
       return value.trim();
@@ -25,6 +31,18 @@ const {
     }
     return undefined;
   }),
+  resolveModelCatalogScopeMock: vi.fn(
+    ({ provider, model }: { provider: string; model: string }) => ({
+      providerRefs: [provider],
+      modelRefs: [`${provider}/${model}`, model],
+    }),
+  ),
+  resolveModelRefFromStringMock: vi.fn(
+    ({ raw, defaultProvider }: { raw: string; defaultProvider: string }) => {
+      const parsed = parseModelRefForMock(raw, defaultProvider);
+      return "error" in parsed ? null : { ref: parsed };
+    },
+  ),
   resolveAllowedModelRefMock: vi.fn(),
   resolveConfiguredModelRefMock: vi.fn(),
   resolveHooksGmailModelMock: vi.fn(),
@@ -33,9 +51,13 @@ const {
 vi.mock("./isolated-agent/run-model-selection.runtime.js", () => ({
   DEFAULT_MODEL: "claude-opus-4-6",
   DEFAULT_PROVIDER: "anthropic",
+  buildModelAliasIndex: buildModelAliasIndexMock,
   getModelRefStatus: getModelRefStatusMock,
+  inferUniqueProviderFromConfiguredModels: inferUniqueProviderFromConfiguredModelsMock,
   loadModelCatalog: loadModelCatalogMock,
   normalizeModelSelection: normalizeModelSelectionMock,
+  resolveModelCatalogScope: resolveModelCatalogScopeMock,
+  resolveModelRefFromString: resolveModelRefFromStringMock,
   resolveAllowedModelRef: resolveAllowedModelRefMock,
   resolveConfiguredModelRef: resolveConfiguredModelRefMock,
   resolveHooksGmailModel: resolveHooksGmailModelMock,
@@ -69,7 +91,17 @@ type SelectModelOptions = {
 };
 
 function parseModelRef(raw: string): { provider: string; model: string } | { error: string } {
+  return parseModelRefForMock(raw);
+}
+
+function parseModelRefForMock(
+  raw: string,
+  defaultProvider?: string,
+): { provider: string; model: string } | { error: string } {
   const trimmed = raw.trim();
+  if (!trimmed.includes("/") && defaultProvider) {
+    return { provider: defaultProvider, model: trimmed };
+  }
   const slash = trimmed.indexOf("/");
   if (slash <= 0 || slash === trimmed.length - 1) {
     return { error: "invalid model" };
@@ -148,6 +180,20 @@ describe("cron model formatting and precedence edge cases", () => {
     vi.clearAllMocks();
     loadModelCatalogMock.mockResolvedValue([]);
     getModelRefStatusMock.mockReturnValue({ allowed: false });
+    inferUniqueProviderFromConfiguredModelsMock.mockReturnValue(undefined);
+    buildModelAliasIndexMock.mockReturnValue({ byAlias: new Map(), byKey: new Map() });
+    resolveModelCatalogScopeMock.mockImplementation(
+      ({ provider, model }: { provider: string; model: string }) => ({
+        providerRefs: [provider],
+        modelRefs: [`${provider}/${model}`, model],
+      }),
+    );
+    resolveModelRefFromStringMock.mockImplementation(
+      ({ raw, defaultProvider }: { raw: string; defaultProvider: string }) => {
+        const parsed = parseModelRefForMock(raw, defaultProvider);
+        return "error" in parsed ? null : { ref: parsed };
+      },
+    );
     resolveHooksGmailModelMock.mockReturnValue(null);
     resolveConfiguredModelRefMock.mockImplementation(({ cfg }: { cfg?: Record<string, unknown> }) =>
       resolveConfiguredModelForTest(cfg ?? {}),
@@ -166,6 +212,11 @@ describe("cron model formatting and precedence edge cases", () => {
         },
         { provider: "openai", model: "gpt-4.1-mini" },
       );
+      expect(loadModelCatalogMock).toHaveBeenCalledWith({
+        config: {},
+        providerRefs: ["openai"],
+        modelRefs: ["openai/gpt-4.1-mini", "gpt-4.1-mini"],
+      });
     });
 
     it("handles leading/trailing whitespace in model string", async () => {

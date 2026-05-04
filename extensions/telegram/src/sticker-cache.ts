@@ -4,6 +4,7 @@ import {
   findModelInCatalog,
   loadModelCatalog,
   modelSupportsVision,
+  resolveModelCatalogScope,
 } from "openclaw/plugin-sdk/agent-runtime";
 import { resolveDefaultModelForAgent } from "openclaw/plugin-sdk/agent-runtime";
 import type { OpenClawConfig } from "openclaw/plugin-sdk/config-types";
@@ -43,10 +44,23 @@ export async function describeStickerImage(params: DescribeStickerParams): Promi
   const { imagePath, cfg, agentDir, agentId } = params;
 
   const defaultModel = resolveDefaultModelForAgent({ cfg, agentId });
+  const autoProviders = resolveAutoMediaKeyProviders({
+    cfg,
+    capability: "image",
+  });
   let activeModel = undefined as { provider: string; model: string } | undefined;
   let catalog: ModelCatalogEntry[] = [];
   try {
-    catalog = await loadModelCatalog({ config: cfg });
+    const defaultModelScope = resolveModelCatalogScope({
+      cfg,
+      provider: defaultModel.provider,
+      model: defaultModel.model,
+    });
+    catalog = await loadModelCatalog({
+      config: cfg,
+      providerRefs: [...new Set([...defaultModelScope.providerRefs, ...autoProviders])],
+      modelRefs: defaultModelScope.modelRefs,
+    });
     const entry = findModelInCatalog(catalog, defaultModel.provider, defaultModel.model);
     const supportsVision = modelSupportsVision(entry);
     if (supportsVision) {
@@ -64,11 +78,6 @@ export async function describeStickerImage(params: DescribeStickerParams): Promi
       return false;
     }
   };
-
-  const autoProviders = resolveAutoMediaKeyProviders({
-    cfg,
-    capability: "image",
-  });
 
   const selectCatalogModel = (provider: string) => {
     const entries = catalog.filter(

@@ -92,7 +92,9 @@ export async function summarizeText(
 
   const startTime = Date.now();
   const { ref } = resolveSummaryModelRef(cfg, config);
-  const resolved = await deps.resolveModelAsync(ref.provider, ref.model, undefined, cfg);
+  const resolved = await deps.resolveModelAsync(ref.provider, ref.model, undefined, cfg, {
+    skipPiDiscovery: true,
+  });
   if (!resolved.model) {
     throw new Error(resolved.error ?? `Unknown summary model: ${ref.provider}/${ref.model}`);
   }

@@ -20,6 +20,7 @@ import {
 } from "../navigation-guard.js";
 import { getBrowserProfileCapabilities } from "../profile-capabilities.js";
 import type { BrowserRouteContext } from "../server-context.js";
+import { resolveTargetIdFromTabs } from "../target-id.js";
 import { matchBrowserUrlPattern } from "../url-pattern.js";
 import { registerBrowserAgentActDownloadRoutes } from "./agent.act.download.js";
 import {
@@ -424,12 +425,18 @@ export function registerBrowserAgentActRoutes(
             });
           };
           if (action.targetId && action.targetId !== tab.targetId) {
-            return jsonActError(
-              res,
-              403,
-              ACT_ERROR_CODES.targetIdMismatch,
-              "action targetId must match request targetId",
+            const resolvedActionTarget = resolveTargetIdFromTabs(
+              action.targetId,
+              await profileCtx.listTabs(),
             );
+            if (!resolvedActionTarget.ok || resolvedActionTarget.targetId !== tab.targetId) {
+              return jsonActError(
+                res,
+                403,
+                ACT_ERROR_CODES.targetIdMismatch,
+                "action targetId must match request targetId",
+              );
+            }
           }
           const profileName = profileCtx.profile.name;
           if (isExistingSession) {

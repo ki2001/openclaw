@@ -327,7 +327,9 @@ export async function applyInlineDirectiveOverrides(params: {
       resolveDefaultThinkingLevel: () => modelState.resolveDefaultThinkingLevel(),
     });
     const currentThinkLevel = resolvedDefaultThinkLevel;
-    const thinkingCatalog = await modelState.resolveThinkingCatalog();
+    const thinkingCatalog = await modelState.resolveThinkingCatalog({
+      hydrateRuntimeCatalog: directives.hasThinkDirective,
+    });
     const directiveReply = await (
       await loadDirectiveImpl()
     ).handleDirectiveOnly({

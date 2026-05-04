@@ -3,6 +3,10 @@ import { ErrorCodes } from "../protocol/index.js";
 
 const mocks = vi.hoisted(() => ({
   getRuntimeConfig: vi.fn(() => ({})),
+  listLoadedSpeechProviders: vi.fn(() => []),
+  listSpeechProviders: vi.fn(() => {
+    throw new Error("broad speech provider registry should not be used by Gateway TTS RPCs");
+  }),
   resolveExplicitTtsOverrides: vi.fn(() => ({})),
   textToSpeech: vi.fn(async () => ({
     success: true,
@@ -21,7 +25,10 @@ vi.mock("../../config/config.js", () => ({
 vi.mock("../../tts/provider-registry.js", () => ({
   canonicalizeSpeechProviderId: vi.fn(),
   getSpeechProvider: vi.fn(),
-  listSpeechProviders: vi.fn(() => []),
+  listLoadedSpeechProviders:
+    mocks.listLoadedSpeechProviders as typeof import("../../tts/provider-registry.js").listLoadedSpeechProviders,
+  listSpeechProviders:
+    mocks.listSpeechProviders as typeof import("../../tts/provider-registry.js").listSpeechProviders,
 }));
 
 vi.mock("../../tts/tts.js", () => ({
@@ -47,6 +54,9 @@ describe("ttsHandlers", () => {
   beforeEach(() => {
     mocks.getRuntimeConfig.mockReset();
     mocks.getRuntimeConfig.mockReturnValue({});
+    mocks.listLoadedSpeechProviders.mockReset();
+    mocks.listLoadedSpeechProviders.mockReturnValue([]);
+    mocks.listSpeechProviders.mockClear();
     mocks.resolveExplicitTtsOverrides.mockReset();
     mocks.resolveExplicitTtsOverrides.mockReturnValue({});
     mocks.textToSpeech.mockReset();
@@ -85,5 +95,47 @@ describe("ttsHandlers", () => {
       }),
     );
     expect(mocks.textToSpeech).not.toHaveBeenCalled();
+  });
+
+  it("uses loaded providers for status/provider listing RPCs", async () => {
+    const provider = {
+      id: "openai",
+      label: "OpenAI",
+      isConfigured: vi.fn(() => true),
+      synthesize: vi.fn(),
+      models: ["tts-1"],
+      voices: ["alloy"],
+    };
+    mocks.listLoadedSpeechProviders.mockReturnValue([provider]);
+
+    const { ttsHandlers } = await import("./tts.js");
+    const statusRespond = vi.fn();
+    const providersRespond = vi.fn();
+
+    await ttsHandlers["tts.status"]({
+      params: {},
+      respond: statusRespond,
+      context: { getRuntimeConfig: mocks.getRuntimeConfig },
+    } as never);
+    await ttsHandlers["tts.providers"]({
+      params: {},
+      respond: providersRespond,
+      context: { getRuntimeConfig: mocks.getRuntimeConfig },
+    } as never);
+
+    expect(mocks.listLoadedSpeechProviders).toHaveBeenCalledTimes(2);
+    expect(mocks.listSpeechProviders).not.toHaveBeenCalled();
+    expect(statusRespond).toHaveBeenCalledWith(
+      true,
+      expect.objectContaining({
+        providerStates: [expect.objectContaining({ id: "openai", configured: true })],
+      }),
+    );
+    expect(providersRespond).toHaveBeenCalledWith(
+      true,
+      expect.objectContaining({
+        providers: [expect.objectContaining({ id: "openai", configured: true })],
+      }),
+    );
   });
 });

@@ -143,6 +143,12 @@ describe("runCapability image skip", () => {
       expect(result.decision.attachments[0]?.attempts[0]?.reason).toBe(
         "primary model supports vision natively",
       );
+      expect(loadModelCatalog).toHaveBeenCalledWith(
+        expect.objectContaining({
+          providerRefs: ["openai"],
+          modelRefs: ["openai/gpt-4.1", "gpt-4.1"],
+        }),
+      );
     } finally {
       await cache.cleanup();
     }
@@ -335,6 +341,12 @@ describe("runCapability image skip", () => {
         provider: "openrouter",
         model: "google/gemini-2.5-flash",
       });
+      expect(loadModelCatalog).toHaveBeenCalledWith(
+        expect.objectContaining({
+          providerRefs: ["openrouter"],
+          modelRefs: ["openrouter/google/gemini-2.5-flash", "google/gemini-2.5-flash"],
+        }),
+      );
     } finally {
       setActivePluginRegistry(createEmptyPluginRegistry());
       vi.unstubAllEnvs();

@@ -196,6 +196,31 @@ describe("browser control server", () => {
   );
 
   it(
+    "accepts tab handle aliases that resolve to the selected tab target",
+    async () => {
+      const base = await startServerAndBase();
+      const response = await postJson<{ ok: boolean; targetId?: string }>(`${base}/act`, {
+        kind: "hover",
+        ref: "2",
+        targetId: "t1",
+      });
+
+      expect(response).toMatchObject({
+        ok: true,
+        targetId: "abcd1234",
+      });
+      expect(pwMocks.hoverViaPlaywright).toHaveBeenCalledWith(
+        expect.objectContaining({
+          cdpUrl: state.cdpBaseUrl,
+          targetId: "abcd1234",
+          ref: "2",
+        }),
+      );
+    },
+    slowTimeoutMs,
+  );
+
+  it(
     "returns ACT_SELECTOR_UNSUPPORTED for selector on unsupported action kinds",
     async () => {
       const base = await startServerAndBase();

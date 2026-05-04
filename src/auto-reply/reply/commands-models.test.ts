@@ -176,7 +176,8 @@ function buildParams(
 
 describe("handleModelsCommand", () => {
   it("shows a simple providers menu on text surfaces", async () => {
-    const result = await handleModelsCommand(buildParams("/models"), true);
+    const params = buildParams("/models");
+    const result = await handleModelsCommand(params, true);
 
     expect(result?.shouldContinue).toBe(false);
     expect(result?.reply?.text).toContain("Providers:");
@@ -186,6 +187,10 @@ describe("handleModelsCommand", () => {
     expect(result?.reply?.text).toContain("Use: /models <provider>");
     expect(result?.reply?.text).toContain("Switch: /model <provider/model>");
     expect(result?.reply?.text).not.toContain("Add: /models add");
+    expect(modelCatalogMocks.loadModelCatalog).toHaveBeenCalledWith({
+      config: params.cfg,
+      readOnly: true,
+    });
     expect(modelProviderAuthMocks.createProviderAuthChecker).toHaveBeenCalledWith(
       expect.objectContaining({ workspaceDir: "/tmp" }),
     );

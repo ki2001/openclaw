@@ -10,6 +10,7 @@ export {
   formatProviderErrorPayload,
   formatProviderHttpErrorMessage,
   getSpeechProvider,
+  listLoadedSpeechProviders,
   listSpeechProviders,
   normalizeApplyTextNormalization,
   normalizeLanguageCode,

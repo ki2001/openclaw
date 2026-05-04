@@ -51,15 +51,21 @@ export { createMediaAttachmentCache, normalizeMediaAttachments } from "./runner.
 export type { ActiveMediaModel } from "./active-model.types.js";
 
 type ProviderRegistry = Map<string, MediaUnderstandingProvider>;
+type ProviderRegistryInput = ProviderRegistry | (() => ProviderRegistry);
 type HasAvailableAuthForProvider =
   typeof import("../agents/model-auth.js").hasAvailableAuthForProvider;
 type ModelCatalogApi = typeof import("../agents/model-catalog.js");
 type ModelCatalog = Awaited<ReturnType<ModelCatalogApi["loadModelCatalog"]>>;
+type LoadModelCatalog = ModelCatalogApi["loadModelCatalog"];
 
 export type RunCapabilityResult = {
   outputs: MediaUnderstandingOutput[];
   decision: MediaUnderstandingDecision;
 };
+
+function resolveProviderRegistry(input: ProviderRegistryInput): ProviderRegistry {
+  return typeof input === "function" ? input() : input;
+}
 
 let cachedHasAvailableAuthForProvider: HasAvailableAuthForProvider | null = null;
 let cachedModelCatalogApi: ModelCatalogApi | null = null;
@@ -67,6 +73,20 @@ let cachedModelCatalogApi: ModelCatalogApi | null = null;
 async function loadModelCatalogApi(): Promise<ModelCatalogApi> {
   cachedModelCatalogApi ??= await import("../agents/model-catalog.js");
   return cachedModelCatalogApi;
+}
+
+function scopedModelCatalogParams(params: {
+  cfg: OpenClawConfig;
+  providerId: string;
+  model?: string;
+}): Parameters<LoadModelCatalog>[0] {
+  const providerId = params.providerId.trim();
+  const model = params.model?.trim();
+  return {
+    config: params.cfg,
+    providerRefs: providerId ? [providerId] : [],
+    modelRefs: providerId && model ? [`${providerId}/${model}`, model] : model ? [model] : [],
+  };
 }
 
 function resolveLiteralProviderApiKey(
@@ -92,16 +112,17 @@ async function hasProviderAuthAvailable(params: {
 
 function resolveConfiguredKeyProviderOrder(params: {
   cfg: OpenClawConfig;
-  providerRegistry: ProviderRegistry;
+  providerRegistry: ProviderRegistryInput;
   capability: MediaUnderstandingCapability;
   fallbackProviders: readonly string[];
 }): string[] {
+  const providerRegistry = resolveProviderRegistry(params.providerRegistry);
   const configuredProviders = Object.keys(params.cfg.models?.providers ?? {})
     .map((providerId) => normalizeMediaProviderId(providerId))
     .filter(Boolean)
     .filter((providerId, index, values) => values.indexOf(providerId) === index)
     .filter((providerId) =>
-      providerSupportsCapability(params.providerRegistry.get(providerId), params.capability),
+      providerSupportsCapability(providerRegistry.get(providerId), params.capability),
     );
 
   return [...new Set([...configuredProviders, ...params.fallbackProviders])];
@@ -204,7 +225,13 @@ async function explicitImageModelVisionStatus(params: {
     return "supported";
   }
   const { findModelInCatalog, loadModelCatalog, modelSupportsVision } = await loadModelCatalogApi();
-  const catalog = await loadModelCatalog({ config: params.cfg });
+  const catalog = await loadModelCatalog(
+    scopedModelCatalogParams({
+      cfg: params.cfg,
+      providerId: params.providerId,
+      model: params.model,
+    }),
+  );
   const entry = findModelInCatalog(catalog, params.providerId, params.model);
   if (!entry) {
     return "unknown";
@@ -251,7 +278,9 @@ async function resolveAutoImageModelId(params: {
     return bundledDefaultModel;
   }
   const { loadModelCatalog, modelSupportsVision } = await loadModelCatalogApi();
-  const catalog = await loadModelCatalog({ config: params.cfg });
+  const catalog = await loadModelCatalog(
+    scopedModelCatalogParams({ cfg: params.cfg, providerId: params.providerId }),
+  );
   return resolveCatalogImageModelId({
     providerId: params.providerId,
     catalog,
@@ -262,8 +291,9 @@ async function resolveAutoImageModelId(params: {
 export function buildProviderRegistry(
   overrides?: Record<string, MediaUnderstandingProvider>,
   cfg?: OpenClawConfig,
+  options?: { providerIds?: readonly string[] },
 ): ProviderRegistry {
-  return buildMediaUnderstandingRegistry(overrides, cfg);
+  return buildMediaUnderstandingRegistry(overrides, cfg, options);
 }
 
 export function resolveMediaAttachmentLocalRoots(params: {
@@ -674,7 +704,9 @@ export async function resolveAutoImageModel(params: {
   agentDir?: string;
   activeModel?: ActiveMediaModel;
 }): Promise<ActiveMediaModel | null> {
-  const providerRegistry = buildProviderRegistry(undefined, params.cfg);
+  const providerRegistry = buildProviderRegistry(undefined, params.cfg, {
+    providerIds: params.activeModel?.provider ? [params.activeModel.provider] : [],
+  });
   const toActive = (entry: MediaUnderstandingModelConfig | null): ActiveMediaModel | null => {
     if (!entry || entry.type === "cli") {
       return null;
@@ -868,7 +900,7 @@ export async function runCapability(params: {
   attachments: MediaAttachmentCache;
   media: MediaAttachment[];
   agentDir?: string;
-  providerRegistry: ProviderRegistry;
+  providerRegistry: ProviderRegistryInput;
   config?: MediaUnderstandingConfig;
   activeModel?: ActiveMediaModel;
 }): Promise<RunCapabilityResult> {
@@ -919,7 +951,13 @@ export async function runCapability(params: {
   ) {
     const { findModelInCatalog, loadModelCatalog, modelSupportsVision } =
       await loadModelCatalogApi();
-    const catalog = await loadModelCatalog({ config: cfg });
+    const catalog = await loadModelCatalog(
+      scopedModelCatalogParams({
+        cfg,
+        providerId: activeProvider,
+        model: params.activeModel?.model,
+      }),
+    );
     const entry = findModelInCatalog(catalog, activeProvider, params.activeModel?.model ?? "");
     if (modelSupportsVision(entry)) {
       if (shouldLogVerbose()) {
@@ -951,18 +989,19 @@ export async function runCapability(params: {
     }
   }
 
+  const providerRegistry = resolveProviderRegistry(params.providerRegistry);
   const entries = resolveModelEntries({
     cfg,
     capability,
     config,
-    providerRegistry: params.providerRegistry,
+    providerRegistry,
   });
   let resolvedEntries = entries;
   if (resolvedEntries.length === 0) {
     resolvedEntries = await resolveAutoEntries({
       cfg,
       agentDir: params.agentDir,
-      providerRegistry: params.providerRegistry,
+      providerRegistry,
       capability,
       activeModel: params.activeModel,
     });
@@ -987,7 +1026,7 @@ export async function runCapability(params: {
       ctx,
       attachmentIndex: attachment.index,
       agentDir: params.agentDir,
-      providerRegistry: params.providerRegistry,
+      providerRegistry,
       cache: params.attachments,
       entries: resolvedEntries,
       config,

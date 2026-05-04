@@ -77,6 +77,7 @@ describe("generateConversationLabel", () => {
       "gpt-test",
       "/tmp/agents/billing/agent",
       {},
+      { skipPiDiscovery: true },
     );
     expect(getRuntimeAuthForModel).toHaveBeenCalledWith({
       model: { provider: "openai" },

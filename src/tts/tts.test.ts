@@ -13,6 +13,7 @@ describe("tts runtime facade", () => {
     expect(publicFacadeSource).toContain('} from "../plugin-sdk/tts-runtime.js";');
     expect(publicFacadeSource).not.toContain("speech-core");
     expect(runtimeFacadeSource).toContain("function loadFacadeModule()");
+    expect(runtimeFacadeSource).toContain("function prewarmTtsRuntimeFacade()");
     expect(runtimeFacadeSource).toContain('dirName: "speech-core"');
     expect(runtimeFacadeSource).toContain(
       'createLazyFacadeRuntimeValue(loadFacadeModule, "buildTtsSystemPromptHint")',

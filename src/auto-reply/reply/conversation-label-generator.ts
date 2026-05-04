@@ -34,7 +34,9 @@ export async function generateConversationLabel(
       ? Math.floor(params.maxLength)
       : DEFAULT_MAX_LABEL_LENGTH;
   const modelRef = resolveDefaultModelForAgent({ cfg, agentId });
-  const resolved = await resolveModelAsync(modelRef.provider, modelRef.model, agentDir, cfg);
+  const resolved = await resolveModelAsync(modelRef.provider, modelRef.model, agentDir, cfg, {
+    skipPiDiscovery: true,
+  });
   if (!resolved.model) {
     logVerbose(
       `conversation-label-generator: failed to resolve model ${modelRef.provider}/${modelRef.model}`,

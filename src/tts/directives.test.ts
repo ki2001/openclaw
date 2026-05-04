@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { SpeechProviderPlugin } from "../plugins/types.js";
 import { createTtsDirectiveTextStreamCleaner, parseTtsDirectives } from "./directives.js";
 import type {
@@ -6,6 +6,16 @@ import type {
   SpeechDirectiveTokenParseResult,
   SpeechModelOverridePolicy,
 } from "./provider-types.js";
+
+const { getSpeechProviderMock, listLoadedSpeechProvidersMock } = vi.hoisted(() => ({
+  getSpeechProviderMock: vi.fn(),
+  listLoadedSpeechProvidersMock: vi.fn(),
+}));
+
+vi.mock("./provider-registry.js", () => ({
+  getSpeechProvider: getSpeechProviderMock,
+  listLoadedSpeechProviders: listLoadedSpeechProvidersMock,
+}));
 
 function makeProvider(
   id: string,
@@ -58,6 +68,12 @@ const fullPolicy: SpeechModelOverridePolicy = {
 };
 
 describe("parseTtsDirectives provider-aware routing", () => {
+  beforeEach(() => {
+    getSpeechProviderMock.mockReset();
+    listLoadedSpeechProvidersMock.mockReset();
+    listLoadedSpeechProvidersMock.mockReturnValue([]);
+  });
+
   it("does not resolve providers when text has no directives", () => {
     const failProvider = {
       get id() {
@@ -123,6 +139,44 @@ describe("parseTtsDirectives provider-aware routing", () => {
     expect(result.overrides.provider).toBeUndefined();
     expect(result.overrides.providerOverrides?.elevenlabs).toEqual({ speed: 1.5 });
     expect(result.overrides.providerOverrides?.minimax).toBeUndefined();
+  });
+
+  it("uses the preferred provider directly without listing the full registry", () => {
+    getSpeechProviderMock.mockReturnValue(minimax);
+    const result = parseTtsDirectives("[[tts:speed=1.5]]", fullPolicy, {
+      cfg: {} as never,
+      preferredProviderId: "minimax",
+    });
+
+    expect(result.overrides.providerOverrides?.minimax).toEqual({ speed: 1.5 });
+    expect(listLoadedSpeechProvidersMock).not.toHaveBeenCalled();
+    expect(getSpeechProviderMock).toHaveBeenCalledWith("minimax", expect.anything());
+  });
+
+  it("single-loads an explicit provider before falling back to loaded providers", () => {
+    const edgeProvider = makeProvider(
+      "microsoft",
+      10,
+      ({ key, value }) =>
+        key === "voice" ? { handled: true, overrides: { voice: value } } : undefined,
+      { aliases: ["edge"] },
+    );
+    getSpeechProviderMock.mockReturnValue(edgeProvider);
+
+    const result = parseTtsDirectives(
+      "[[tts:provider=edge voice=en-US-MichelleNeural]]",
+      fullPolicy,
+      {
+        cfg: {} as never,
+      },
+    );
+
+    expect(result.overrides.provider).toBe("edge");
+    expect(result.overrides.providerOverrides?.microsoft).toEqual({
+      voice: "en-US-MichelleNeural",
+    });
+    expect(getSpeechProviderMock).toHaveBeenCalledWith("edge", expect.anything());
+    expect(listLoadedSpeechProvidersMock).not.toHaveBeenCalled();
   });
 
   it("does not fall through when the explicit provider does not handle the key", () => {

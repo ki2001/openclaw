@@ -1,7 +1,10 @@
 import { normalizeProviderId } from "../agents/model-selection.js";
 import type { OpenClawConfig } from "../config/types.js";
 import { isBlockedObjectKey } from "../infra/prototype-keys.js";
-import { resolvePluginCapabilityProviders } from "../plugins/capability-provider-runtime.js";
+import {
+  resolvePluginCapabilityProvider,
+  resolvePluginCapabilityProviders,
+} from "../plugins/capability-provider-runtime.js";
 import type { MusicGenerationProviderPlugin } from "../plugins/types.js";
 
 const BUILTIN_MUSIC_GENERATION_PROVIDERS: readonly MusicGenerationProviderPlugin[] = [];
@@ -73,5 +76,10 @@ export function getMusicGenerationProvider(
   if (!normalized) {
     return undefined;
   }
-  return buildProviderMaps(cfg).aliases.get(normalized);
+  const direct = resolvePluginCapabilityProvider({
+    key: "musicGenerationProviders",
+    providerId: normalized,
+    cfg,
+  });
+  return direct ?? buildProviderMaps(cfg).aliases.get(normalized);
 }

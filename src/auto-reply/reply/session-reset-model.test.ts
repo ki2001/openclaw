@@ -1,9 +1,15 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { ModelCatalogEntry } from "../../agents/model-catalog.js";
 import type { OpenClawConfig } from "../../config/config.js";
 import type { SessionEntry } from "../../config/sessions.js";
 import type { ModelAliasIndex } from "./model-selection-directive.js";
 import { applyResetModelOverride } from "./session-reset-model.js";
+
+const loadModelCatalog = vi.hoisted(() => vi.fn());
+
+vi.mock("../../agents/model-catalog.js", () => ({
+  loadModelCatalog,
+}));
 
 const modelCatalog: ModelCatalogEntry[] = [
   { provider: "minimax", id: "m2.7", name: "M2.7" },
@@ -51,6 +57,33 @@ async function applyResetFixture(params: {
 }
 
 describe("applyResetModelOverride", () => {
+  it("scopes model catalog loading to the reset model hint", async () => {
+    loadModelCatalog.mockResolvedValueOnce(modelCatalog);
+    const fixture = createResetFixture();
+
+    await applyResetModelOverride({
+      cfg: fixture.cfg,
+      resetTriggered: true,
+      bodyStripped: "minimax summarize",
+      sessionCtx: fixture.sessionCtx,
+      ctx: fixture.ctx,
+      sessionEntry: fixture.sessionEntry,
+      sessionStore: fixture.sessionStore,
+      sessionKey: "agent:main:dm:1",
+      defaultProvider: "openai",
+      defaultModel: "gpt-4o-mini",
+      aliasIndex: fixture.aliasIndex,
+    });
+
+    expect(loadModelCatalog).toHaveBeenCalledWith({
+      config: fixture.cfg,
+      providerRefs: ["minimax", "openai"],
+      modelRefs: ["openai/minimax", "minimax"],
+    });
+    expect(fixture.sessionEntry.providerOverride).toBe("minimax");
+    expect(fixture.sessionEntry.modelOverride).toBe("m2.7");
+  });
+
   it("selects a model hint and strips it from the body", async () => {
     const { sessionEntry, sessionCtx } = await applyResetFixture({
       resetTriggered: true,

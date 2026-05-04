@@ -30,11 +30,13 @@ export { normalizeMediaProviderId } from "./provider-id.js";
 export function buildMediaUnderstandingRegistry(
   overrides?: Record<string, MediaUnderstandingProvider>,
   cfg?: OpenClawConfig,
+  options?: { providerIds?: readonly string[] },
 ): Map<string, MediaUnderstandingProvider> {
   const registry = new Map<string, MediaUnderstandingProvider>();
   for (const provider of resolvePluginCapabilityProviders({
     key: "mediaUnderstandingProviders",
     cfg,
+    ...(options?.providerIds ? { providerIds: options.providerIds } : {}),
   })) {
     mergeProviderIntoRegistry(registry, provider);
   }

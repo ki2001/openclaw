@@ -22,12 +22,10 @@ import {
   type ImageSanitizationLimits,
 } from "./image-sanitization.js";
 import { getApiKeyForModel, requireApiKey } from "./model-auth.js";
-import { ensureOpenClawModelsJson } from "./models-config.js";
 import { EmbeddedBlockChunker, type BlockReplyChunking } from "./pi-embedded-block-chunker.js";
-import { resolveModelWithRegistry } from "./pi-embedded-runner/model.js";
+import { resolveModelAsync } from "./pi-embedded-runner/model.js";
 import { getActiveEmbeddedRunSnapshot } from "./pi-embedded-runner/runs.js";
 import { streamWithPayloadPatch } from "./pi-embedded-runner/stream-payload-utils.js";
-import { discoverAuthStorage, discoverModels } from "./pi-model-discovery.js";
 import { registerProviderStreamForModel } from "./provider-stream.js";
 import { stripToolResultDetails } from "./session-transcript-repair.js";
 import { sanitizeImageBlocks } from "./tool-images.js";
@@ -226,15 +224,15 @@ async function resolveRuntimeModel(params: {
   authProfileId?: string;
   authProfileIdSource?: "auto" | "user";
 }> {
-  await ensureOpenClawModelsJson(params.cfg, params.agentDir);
-  const authStorage = discoverAuthStorage(params.agentDir);
-  const modelRegistry = discoverModels(authStorage, params.agentDir);
-  const model = resolveModelWithRegistry({
-    provider: params.provider,
-    modelId: params.model,
-    modelRegistry,
-    cfg: params.cfg,
-  });
+  const { model } = await resolveModelAsync(
+    params.provider,
+    params.model,
+    params.agentDir,
+    params.cfg,
+    {
+      skipPiDiscovery: true,
+    },
+  );
   if (!model) {
     throw new Error(`Unknown model: ${params.provider}/${params.model}`);
   }

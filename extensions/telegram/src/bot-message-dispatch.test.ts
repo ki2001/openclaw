@@ -61,6 +61,12 @@ const loadModelCatalog = vi.hoisted(() => vi.fn(async () => ({})));
 const findModelInCatalog = vi.hoisted(() => vi.fn(() => null));
 const modelSupportsVision = vi.hoisted(() => vi.fn(() => false));
 const resolveAgentDir = vi.hoisted(() => vi.fn(() => "/tmp/agent"));
+const resolveModelCatalogScope = vi.hoisted(() =>
+  vi.fn(({ provider, model }: { provider: string; model: string }) => ({
+    providerRefs: [provider],
+    modelRefs: [`${provider}/${model}`, model],
+  })),
+);
 const resolveDefaultModelForAgent = vi.hoisted(() =>
   vi.fn(() => ({ provider: "openai", model: "gpt-test" })),
 );
@@ -116,6 +122,7 @@ vi.mock("./bot-message-dispatch.agent.runtime.js", () => ({
   loadModelCatalog,
   modelSupportsVision,
   resolveAgentDir,
+  resolveModelCatalogScope,
   resolveDefaultModelForAgent,
 }));
 
@@ -3804,6 +3811,11 @@ describe("dispatchTelegramMessage draft streaming", () => {
     releaseCatalogLoad();
     await Promise.all([firstPromise, abortPromise]);
 
+    expect(loadModelCatalog).toHaveBeenCalledWith({
+      config: expect.any(Object),
+      providerRefs: ["openai"],
+      modelRefs: ["openai/gpt-test", "gpt-test"],
+    });
     expect(deliverReplies).not.toHaveBeenCalledWith(
       expect.objectContaining({
         replies: [{ text: "Old reply final" }],

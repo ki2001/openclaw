@@ -27,13 +27,20 @@ const hasAvailableAuthForProviderMock = vi.hoisted(() =>
 const fetchRemoteMediaMock = vi.hoisted(() => vi.fn());
 const runFfmpegMock = vi.hoisted(() => vi.fn());
 const runExecMock = vi.hoisted(() => vi.fn());
+const buildMediaUnderstandingRegistryMock = vi.hoisted(() => vi.fn());
+const extractFileContentFromSourceMock = vi.hoisted(() => vi.fn());
+const logVerboseMock = vi.hoisted(() => vi.fn());
+const shouldLogVerboseMock = vi.hoisted(() => vi.fn(() => true));
 
 let applyMediaUnderstanding: typeof import("./apply.js").applyMediaUnderstanding;
 let clearMediaUnderstandingBinaryCacheForTests: typeof import("./runner.js").clearMediaUnderstandingBinaryCacheForTests;
+let actualExtractFileContentFromSource: typeof import("../media/input-files.js").extractFileContentFromSource;
 const mockedResolveApiKey = resolveApiKeyForProviderMock;
 const mockedFetchRemoteMedia = fetchRemoteMediaMock;
 const mockedRunFfmpeg = runFfmpegMock;
 const mockedRunExec = runExecMock;
+const mockedBuildMediaUnderstandingRegistry = buildMediaUnderstandingRegistryMock;
+const mockedExtractFileContentFromSource = extractFileContentFromSourceMock;
 
 const TEMP_MEDIA_PREFIX = "openclaw-media-";
 let suiteTempMediaRootDir = "";
@@ -263,34 +270,45 @@ describe("applyMediaUnderstanding", () => {
     vi.doMock("../process/exec.js", () => ({
       runExec: runExecMock,
     }));
+    vi.doMock("../globals.js", () => ({
+      logVerbose: logVerboseMock,
+      shouldLogVerbose: shouldLogVerboseMock,
+    }));
+    const inputFilesModule =
+      await vi.importActual<typeof import("../media/input-files.js")>("../media/input-files.js");
+    actualExtractFileContentFromSource = inputFilesModule.extractFileContentFromSource;
+    vi.doMock("../media/input-files.js", () => ({
+      ...inputFilesModule,
+      extractFileContentFromSource: extractFileContentFromSourceMock,
+    }));
     vi.doMock("./provider-registry.js", async () => {
       const actual =
         await vi.importActual<typeof import("./provider-registry.js")>("./provider-registry.js");
       const registryProviders = createRegistryMediaProviders();
       return {
         ...actual,
-        buildMediaUnderstandingRegistry: (
-          overrides?: Record<string, MediaUnderstandingProvider>,
-        ) => {
-          const registry = new Map<string, MediaUnderstandingProvider>(
-            Object.entries(registryProviders),
-          );
-          for (const [key, provider] of Object.entries(overrides ?? {})) {
-            const normalizedKey = actual.normalizeMediaProviderId(key);
-            const existing = registry.get(normalizedKey);
-            registry.set(
-              normalizedKey,
-              existing
-                ? {
-                    ...existing,
-                    ...provider,
-                    capabilities: provider.capabilities ?? existing.capabilities,
-                  }
-                : provider,
+        buildMediaUnderstandingRegistry: buildMediaUnderstandingRegistryMock.mockImplementation(
+          (overrides?: Record<string, MediaUnderstandingProvider>) => {
+            const registry = new Map<string, MediaUnderstandingProvider>(
+              Object.entries(registryProviders),
             );
-          }
-          return registry;
-        },
+            for (const [key, provider] of Object.entries(overrides ?? {})) {
+              const normalizedKey = actual.normalizeMediaProviderId(key);
+              const existing = registry.get(normalizedKey);
+              registry.set(
+                normalizedKey,
+                existing
+                  ? {
+                      ...existing,
+                      ...provider,
+                      capabilities: provider.capabilities ?? existing.capabilities,
+                    }
+                  : provider,
+              );
+            }
+            return registry;
+          },
+        ),
       };
     });
     ({ applyMediaUnderstanding } = await import("./apply.js"));
@@ -312,6 +330,12 @@ describe("applyMediaUnderstanding", () => {
     mockedFetchRemoteMedia.mockClear();
     mockedRunFfmpeg.mockReset();
     mockedRunExec.mockReset();
+    mockedBuildMediaUnderstandingRegistry.mockClear();
+    mockedExtractFileContentFromSource.mockReset();
+    logVerboseMock.mockClear();
+    shouldLogVerboseMock.mockReset();
+    shouldLogVerboseMock.mockReturnValue(true);
+    mockedExtractFileContentFromSource.mockImplementation(actualExtractFileContentFromSource);
     mockedFetchRemoteMedia.mockResolvedValue({
       buffer: createSafeAudioFixtureBuffer(2048),
       contentType: "audio/ogg",
@@ -1446,6 +1470,48 @@ describe("applyMediaUnderstanding", () => {
     });
 
     expectFileNotApplied({ ctx, result, body: "<media:file>" });
+  });
+
+  it("does not build the media provider registry for document-only turns", async () => {
+    const filePath = await createTempMediaFile({
+      fileName: "notes.txt",
+      content: "plain text attachment",
+    });
+
+    const { result } = await applyWithDisabledMedia({
+      body: "<media:file>",
+      mediaPath: filePath,
+      mediaType: "text/plain",
+    });
+
+    expect(result.appliedFile).toBe(true);
+    expect(mockedBuildMediaUnderstandingRegistry).not.toHaveBeenCalled();
+  });
+
+  it("keeps a PDF placeholder block when pre-extraction is unavailable", async () => {
+    mockedExtractFileContentFromSource.mockRejectedValueOnce(
+      new Error(
+        "PDF extraction disabled or unavailable: enable the document-extract plugin to process application/pdf files.",
+      ),
+    );
+    const filePath = await createTempMediaFile({
+      fileName: "paper.pdf",
+      content: Buffer.from("%PDF-1.7\n1 0 obj\n<< /Type /Catalog >>\nendobj\n", "utf8"),
+    });
+
+    const { ctx, result } = await applyWithDisabledMedia({
+      body: "<media:file>",
+      mediaPath: filePath,
+      mediaType: "application/pdf",
+    });
+
+    expect(result.appliedFile).toBe(true);
+    expect(ctx.Body).toContain("pre-extraction unavailable");
+    expect(ctx.Body).toContain('mime="application/pdf"');
+    expect(logVerboseMock).not.toHaveBeenCalledWith(
+      expect.stringContaining("file attachment skipped (extract)"),
+    );
+    expect(logVerboseMock).not.toHaveBeenCalled();
   });
 
   it("respects configured allowedMimes for text-like attachments", async () => {

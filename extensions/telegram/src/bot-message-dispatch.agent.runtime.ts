@@ -3,5 +3,6 @@ export {
   loadModelCatalog,
   modelSupportsVision,
   resolveAgentDir,
+  resolveModelCatalogScope,
   resolveDefaultModelForAgent,
 } from "openclaw/plugin-sdk/agent-runtime";

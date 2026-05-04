@@ -1,6 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { withPathResolutionEnv } from "../test-utils/env.js";
 import { createFixtureSuite } from "../test-utils/fixture-suite.js";
 import { createTempHomeEnv, type TempHomeEnv } from "../test-utils/temp-home.js";
@@ -10,10 +10,22 @@ import {
   setMockSkillsHomeEnv,
   type SkillsHomeEnvSnapshot,
 } from "./skills/home-env.test-support.js";
-import { buildWorkspaceSkillSnapshot, buildWorkspaceSkillsPrompt } from "./skills/workspace.js";
+import {
+  bumpSkillsSnapshotVersion,
+  resetSkillsRefreshStateForTest,
+} from "./skills/refresh-state.js";
+import {
+  buildWorkspaceSkillSnapshot,
+  buildWorkspaceSkillsPrompt,
+  resetWorkspaceSkillDiscoveryCacheForTest,
+} from "./skills/workspace.js";
+
+const pluginSkillsMocks = vi.hoisted(() => ({
+  resolvePluginSkillDirs: vi.fn(() => []),
+}));
 
 vi.mock("./skills/plugin-skills.js", () => ({
-  resolvePluginSkillDirs: () => [],
+  resolvePluginSkillDirs: pluginSkillsMocks.resolvePluginSkillDirs,
 }));
 
 const fixtureSuite = createFixtureSuite("openclaw-skills-snapshot-suite-");
@@ -59,6 +71,12 @@ afterAll(async () => {
     tempHome = null;
   }
   await fixtureSuite.cleanup();
+});
+
+afterEach(() => {
+  resetWorkspaceSkillDiscoveryCacheForTest();
+  resetSkillsRefreshStateForTest();
+  pluginSkillsMocks.resolvePluginSkillDirs.mockClear();
 });
 
 function withWorkspaceHome<T>(workspaceDir: string, cb: () => T): T {
@@ -173,6 +191,82 @@ describe("buildWorkspaceSkillSnapshot", () => {
     );
 
     expect(snapshot.prompt).toBe(prompt);
+  });
+
+  it("reuses discovery only for versioned skill snapshots", async () => {
+    const workspaceDir = await fixtureSuite.createCaseDir("workspace");
+    await writeSkill({
+      dir: path.join(workspaceDir, "skills", "alpha"),
+      name: "alpha",
+      description: "Alpha",
+    });
+
+    const first = buildSnapshot(workspaceDir, { snapshotVersion: 1 });
+    await writeSkill({
+      dir: path.join(workspaceDir, "skills", "beta"),
+      name: "beta",
+      description: "Beta",
+    });
+    const sameVersion = buildSnapshot(workspaceDir, { snapshotVersion: 1 });
+    const nextVersion = bumpSkillsSnapshotVersion({ workspaceDir, reason: "watch" });
+    const refreshed = buildSnapshot(workspaceDir, { snapshotVersion: nextVersion });
+
+    expectSnapshotNamesAndPrompt(first, { contains: ["alpha"], omits: ["beta"] });
+    expectSnapshotNamesAndPrompt(sameVersion, { contains: ["alpha"], omits: ["beta"] });
+    expectSnapshotNamesAndPrompt(refreshed, { contains: ["alpha", "beta"] });
+  });
+
+  it("reuses plugin skill directory discovery for versioned snapshots", async () => {
+    const workspaceDir = await fixtureSuite.createCaseDir("workspace");
+    await writeSkill({
+      dir: path.join(workspaceDir, "skills", "alpha"),
+      name: "alpha",
+      description: "Alpha",
+    });
+
+    buildSnapshot(workspaceDir, { snapshotVersion: 1 });
+    buildSnapshot(workspaceDir, { snapshotVersion: 1 });
+
+    const nextVersion = bumpSkillsSnapshotVersion({ workspaceDir, reason: "watch" });
+    buildSnapshot(workspaceDir, { snapshotVersion: nextVersion });
+
+    expect(pluginSkillsMocks.resolvePluginSkillDirs).toHaveBeenCalledTimes(2);
+  });
+
+  it("keeps resolved skills isolated when reusing versioned discovery", async () => {
+    const workspaceDir = await fixtureSuite.createCaseDir("workspace");
+    await writeSkill({
+      dir: path.join(workspaceDir, "skills", "alpha"),
+      name: "alpha",
+      description: "Alpha",
+    });
+
+    const first = buildSnapshot(workspaceDir, { snapshotVersion: 1 });
+    first.resolvedSkills![0]!.description = "mutated";
+
+    const second = buildSnapshot(workspaceDir, { snapshotVersion: 1 });
+
+    expect(second.resolvedSkills![0]!.description).toBe("Alpha");
+  });
+
+  it("keeps unversioned skill snapshots fresh", async () => {
+    const workspaceDir = await fixtureSuite.createCaseDir("workspace");
+    await writeSkill({
+      dir: path.join(workspaceDir, "skills", "alpha"),
+      name: "alpha",
+      description: "Alpha",
+    });
+
+    const first = buildSnapshot(workspaceDir);
+    await writeSkill({
+      dir: path.join(workspaceDir, "skills", "beta"),
+      name: "beta",
+      description: "Beta",
+    });
+    const fresh = buildSnapshot(workspaceDir);
+
+    expectSnapshotNamesAndPrompt(first, { contains: ["alpha"], omits: ["beta"] });
+    expectSnapshotNamesAndPrompt(fresh, { contains: ["alpha", "beta"] });
   });
 
   it("truncates the skills prompt when it exceeds the configured char budget", async () => {

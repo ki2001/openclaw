@@ -1,7 +1,10 @@
 import { normalizeProviderId } from "../agents/model-selection.js";
 import type { OpenClawConfig } from "../config/types.js";
 import { isBlockedObjectKey } from "../infra/prototype-keys.js";
-import { resolvePluginCapabilityProviders } from "../plugins/capability-provider-runtime.js";
+import {
+  resolvePluginCapabilityProvider,
+  resolvePluginCapabilityProviders,
+} from "../plugins/capability-provider-runtime.js";
 import type { VideoGenerationProviderPlugin } from "../plugins/types.js";
 
 const BUILTIN_VIDEO_GENERATION_PROVIDERS: readonly VideoGenerationProviderPlugin[] = [];
@@ -73,5 +76,10 @@ export function getVideoGenerationProvider(
   if (!normalized) {
     return undefined;
   }
-  return buildProviderMaps(cfg).aliases.get(normalized);
+  const direct = resolvePluginCapabilityProvider({
+    key: "videoGenerationProviders",
+    providerId: normalized,
+    cfg,
+  });
+  return direct ?? buildProviderMaps(cfg).aliases.get(normalized);
 }

@@ -33,7 +33,7 @@ vi.mock("../../globals.js", () => ({
 vi.mock("../../tts/provider-registry.js", () => ({
   canonicalizeSpeechProviderId: vi.fn((provider: string) => provider),
   getSpeechProvider: vi.fn(() => null),
-  listSpeechProviders: vi.fn(() => []),
+  listLoadedSpeechProviders: vi.fn(() => []),
 }));
 
 vi.mock("../../tts/tts.js", () => ttsMocks);

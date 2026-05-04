@@ -1,7 +1,10 @@
 import { normalizeProviderId } from "../agents/model-selection.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
 import { isBlockedObjectKey } from "../infra/prototype-keys.js";
-import { resolvePluginCapabilityProviders } from "../plugins/capability-provider-runtime.js";
+import {
+  resolvePluginCapabilityProvider,
+  resolvePluginCapabilityProviders,
+} from "../plugins/capability-provider-runtime.js";
 import type { ImageGenerationProviderPlugin } from "../plugins/types.js";
 
 const BUILTIN_IMAGE_GENERATION_PROVIDERS: readonly ImageGenerationProviderPlugin[] = [];
@@ -73,5 +76,10 @@ export function getImageGenerationProvider(
   if (!normalized) {
     return undefined;
   }
-  return buildProviderMaps(cfg).aliases.get(normalized);
+  const direct = resolvePluginCapabilityProvider({
+    key: "imageGenerationProviders",
+    providerId: normalized,
+    cfg,
+  });
+  return direct ?? buildProviderMaps(cfg).aliases.get(normalized);
 }

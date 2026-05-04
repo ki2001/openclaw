@@ -29,9 +29,50 @@ function splitBody(body: string) {
   };
 }
 
-async function loadResetModelCatalog(cfg: OpenClawConfig): Promise<ModelCatalogEntry[]> {
+function resolveResetModelCatalogScope(params: {
+  raw: string;
+  defaultProvider: string;
+  aliasIndex: ModelAliasIndex;
+}): { providerRefs: string[]; modelRefs: string[] } | undefined {
+  const providerRefs = new Set<string>();
+  const modelRefs = new Set<string>();
+  const firstTokenProvider = normalizeProviderId(params.raw);
+  if (firstTokenProvider) {
+    providerRefs.add(firstTokenProvider);
+  }
+
+  const resolved = resolveModelRefFromDirectiveString({
+    raw: params.raw,
+    defaultProvider: params.defaultProvider,
+    aliasIndex: params.aliasIndex,
+  });
+  if (!resolved) {
+    return providerRefs.size > 0 ? { providerRefs: [...providerRefs], modelRefs: [] } : undefined;
+  }
+
+  providerRefs.add(resolved.ref.provider);
+  modelRefs.add(modelKey(resolved.ref.provider, resolved.ref.model));
+  modelRefs.add(resolved.ref.model);
+
+  return {
+    providerRefs: [...providerRefs],
+    modelRefs: [...modelRefs],
+  };
+}
+
+async function loadResetModelCatalog(params: {
+  cfg: OpenClawConfig;
+  raw: string;
+  defaultProvider: string;
+  aliasIndex: ModelAliasIndex;
+}): Promise<ModelCatalogEntry[]> {
   const { loadModelCatalog } = await import("../../agents/model-catalog.js");
-  return loadModelCatalog({ config: cfg });
+  const scope = resolveResetModelCatalogScope(params);
+  return loadModelCatalog({
+    config: params.cfg,
+    providerRefs: scope?.providerRefs,
+    modelRefs: scope?.modelRefs,
+  });
 }
 
 async function resolveResetFallbackModels(params: {
@@ -163,7 +204,14 @@ export async function applyResetModelOverride(params: {
     return {};
   }
 
-  const catalog = params.modelCatalog ?? (await loadResetModelCatalog(params.cfg));
+  const catalog =
+    params.modelCatalog ??
+    (await loadResetModelCatalog({
+      cfg: params.cfg,
+      raw: first,
+      defaultProvider: params.defaultProvider,
+      aliasIndex: params.aliasIndex,
+    }));
   const allowedModelKeys = await buildResetAllowedModelKeys({
     cfg: params.cfg,
     catalog,

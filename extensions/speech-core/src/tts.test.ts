@@ -30,6 +30,7 @@ const prepareSynthesisMock = vi.hoisted(() =>
   vi.fn(async (_ctx: SpeechProviderPrepareSynthesisContext) => undefined),
 );
 
+const listLoadedSpeechProvidersMock = vi.hoisted(() => vi.fn());
 const listSpeechProvidersMock = vi.hoisted(() => vi.fn());
 const getSpeechProviderMock = vi.hoisted(() => vi.fn());
 const transcodeAudioBufferMock = vi.hoisted(() =>
@@ -90,6 +91,7 @@ vi.mock("../api.js", async () => {
     prepareSynthesis: prepareSynthesisMock,
     synthesize: synthesizeMock,
   };
+  listLoadedSpeechProvidersMock.mockImplementation(() => [mockProvider]);
   listSpeechProvidersMock.mockImplementation(() => [mockProvider]);
   getSpeechProviderMock.mockImplementation((providerId: string) =>
     providerId === "mock" ? mockProvider : null,
@@ -101,6 +103,7 @@ vi.mock("../api.js", async () => {
     normalizeSpeechProviderId: (providerId: string | undefined) =>
       providerId?.trim().toLowerCase() || undefined,
     getSpeechProvider: getSpeechProviderMock,
+    listLoadedSpeechProviders: listLoadedSpeechProvidersMock,
     listSpeechProviders: listSpeechProvidersMock,
     scheduleCleanup: vi.fn(),
   };
@@ -111,6 +114,7 @@ const {
   getTtsPersona,
   getTtsProvider,
   maybeApplyTtsToPayload,
+  resolveTtsProviderOrder,
   resolveTtsConfig,
   synthesizeSpeech,
   textToSpeechTelephony,
@@ -141,6 +145,7 @@ function createMockSpeechProvider(
 }
 
 function installSpeechProviders(providers: SpeechProviderPlugin[]): void {
+  listLoadedSpeechProvidersMock.mockImplementation(() => providers);
   listSpeechProvidersMock.mockImplementation(() => providers);
   getSpeechProviderMock.mockImplementation(
     (providerId: string) => providers.find((provider) => provider.id === providerId) ?? null,
@@ -477,6 +482,31 @@ describe("speech-core native voice-note routing", () => {
 
     expect(getTtsPersona(config, prefsPath)?.id).toBe("alfred");
     expect(getTtsProvider(config, prefsPath)).toBe("mock");
+  });
+
+  it("uses loaded speech providers for auto selection and fallback ordering", async () => {
+    const mockProvider = createMockSpeechProvider("mock", { autoSelectOrder: 1 });
+    const backupProvider = createMockSpeechProvider("backup", { autoSelectOrder: 2 });
+    listLoadedSpeechProvidersMock.mockImplementation(() => [mockProvider, backupProvider]);
+    listSpeechProvidersMock.mockImplementation(() => {
+      throw new Error("broad speech provider listing should not run");
+    });
+    getSpeechProviderMock.mockImplementation(
+      (providerId: string) =>
+        [mockProvider, backupProvider].find((provider) => provider.id === providerId) ?? null,
+    );
+
+    const config = resolveTtsConfig({
+      messages: {
+        tts: {
+          enabled: true,
+          prefsPath: "/tmp/openclaw-speech-core-loaded-only.json",
+        },
+      },
+    });
+
+    expect(getTtsProvider(config, "/tmp/openclaw-speech-core-loaded-only.json")).toBe("mock");
+    expect(resolveTtsProviderOrder("mock", config.sourceConfig)).toEqual(["mock", "backup"]);
   });
 
   it("merges active persona provider binding into synthesis config", async () => {

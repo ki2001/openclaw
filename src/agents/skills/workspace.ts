@@ -142,6 +142,20 @@ type LoadedSkillRecord = {
   frontmatter?: ParsedSkillFrontmatter;
 };
 
+type WorkspaceSkillEntriesCacheKey = {
+  key: string;
+  snapshotVersion: number;
+};
+
+type WorkspaceSkillEntriesCacheRecord = {
+  snapshotVersion: number;
+  entries: SkillEntry[];
+};
+
+const workspaceSkillEntriesCache = new Map<string, WorkspaceSkillEntriesCacheRecord>();
+let pluginSkillDirsCacheByConfig = new WeakMap<OpenClawConfig, Map<string, string[]>>();
+let pluginSkillDirsCacheWithoutConfig = new Map<string, string[]>();
+
 type CandidateSkillDir = {
   skillDir: string;
   name: string;
@@ -233,6 +247,121 @@ function resolveRawEntryScanLimit(maxCandidateDirs: number | undefined): number 
     DEFAULT_MAX_RAW_ENTRIES_PER_DIRECTORY_SCAN,
     Math.max(DEFAULT_MIN_RAW_ENTRIES_PER_DIRECTORY_SCAN, normalized * 10),
   );
+}
+
+function cloneSkillEntries(entries: SkillEntry[]): SkillEntry[] {
+  return structuredClone(entries);
+}
+
+function resolveWorkspaceSkillEntriesCacheKey(params: {
+  workspaceDir: string;
+  snapshotVersion?: number;
+  managedSkillsDir: string;
+  bundledSkillsDir?: string;
+  extraDirs: string[];
+  pluginSkillDirs: string[];
+  limits: ResolvedSkillsLimits;
+}): WorkspaceSkillEntriesCacheKey | undefined {
+  if (params.snapshotVersion === undefined) {
+    return undefined;
+  }
+  return {
+    snapshotVersion: params.snapshotVersion,
+    key: JSON.stringify({
+      workspaceDir: path.resolve(params.workspaceDir),
+      managedSkillsDir: path.resolve(params.managedSkillsDir),
+      bundledSkillsDir: params.bundledSkillsDir ? path.resolve(params.bundledSkillsDir) : "",
+      extraDirs: params.extraDirs.map((dir) => path.resolve(dir)),
+      pluginSkillDirs: params.pluginSkillDirs.map((dir) => path.resolve(dir)),
+      limits: {
+        maxCandidatesPerRoot: params.limits.maxCandidatesPerRoot,
+        maxSkillsLoadedPerSource: params.limits.maxSkillsLoadedPerSource,
+        maxSkillFileBytes: params.limits.maxSkillFileBytes,
+      },
+    }),
+  };
+}
+
+function readCachedWorkspaceSkillEntries(
+  cacheKey: WorkspaceSkillEntriesCacheKey | undefined,
+  opts?: { clone?: boolean },
+): SkillEntry[] | undefined {
+  if (!cacheKey) {
+    return undefined;
+  }
+  const cached = workspaceSkillEntriesCache.get(cacheKey.key);
+  if (!cached || cached.snapshotVersion !== cacheKey.snapshotVersion) {
+    return undefined;
+  }
+  return opts?.clone === false ? cached.entries : cloneSkillEntries(cached.entries);
+}
+
+function rememberWorkspaceSkillEntries(params: {
+  cacheKey: WorkspaceSkillEntriesCacheKey | undefined;
+  entries: SkillEntry[];
+}): SkillEntry[] {
+  if (!params.cacheKey) {
+    return params.entries;
+  }
+  workspaceSkillEntriesCache.set(params.cacheKey.key, {
+    snapshotVersion: params.cacheKey.snapshotVersion,
+    entries: cloneSkillEntries(params.entries),
+  });
+  return params.entries;
+}
+
+function resolvePluginSkillDirsCacheKey(params: {
+  workspaceDir: string;
+  config?: OpenClawConfig;
+  snapshotVersion?: number;
+}): string | undefined {
+  if (params.snapshotVersion === undefined) {
+    return undefined;
+  }
+  return JSON.stringify({
+    workspaceDir: path.resolve(params.workspaceDir),
+    snapshotVersion: params.snapshotVersion,
+    plugins: params.config?.plugins ?? null,
+    acp: params.config?.acp ?? null,
+  });
+}
+
+function resolveVersionedPluginSkillDirs(params: {
+  workspaceDir: string;
+  config?: OpenClawConfig;
+  snapshotVersion?: number;
+}): string[] {
+  const cacheKey = resolvePluginSkillDirsCacheKey(params);
+  if (!cacheKey) {
+    return resolvePluginSkillDirs({
+      workspaceDir: params.workspaceDir,
+      config: params.config,
+    });
+  }
+  const cache = params.config
+    ? (pluginSkillDirsCacheByConfig.get(params.config) ??
+      (() => {
+        const next = new Map<string, string[]>();
+        pluginSkillDirsCacheByConfig.set(params.config!, next);
+        return next;
+      })())
+    : pluginSkillDirsCacheWithoutConfig;
+  const cached = cache.get(cacheKey);
+  if (cached) {
+    return cached.slice();
+  }
+  const resolved = resolvePluginSkillDirs({
+    workspaceDir: params.workspaceDir,
+    config: params.config,
+  });
+  cache.set(cacheKey, resolved.slice());
+  return resolved;
+}
+
+export function resetWorkspaceSkillDiscoveryCacheForTest(): void {
+  workspaceSkillEntriesCache.clear();
+  pluginSkillDirsCacheByConfig = new WeakMap();
+  pluginSkillDirsCacheWithoutConfig = new Map();
 }
 
 function tryRealpath(filePath: string): string | null {
@@ -412,6 +541,8 @@ function loadSkillEntries(
     agentId?: string;
     managedSkillsDir?: string;
     bundledSkillsDir?: string;
+    snapshotVersion?: number;
+    cloneCachedEntries?: boolean;
   },
 ): SkillEntry[] {
   const limits = resolveSkillsLimits(opts?.config, opts?.agentId);
@@ -632,12 +763,31 @@ function loadSkillEntries(
   const workspaceSkillsDir = path.resolve(workspaceDir, "skills");
   const bundledSkillsDir = opts?.bundledSkillsDir ?? resolveBundledSkillsDir();
   const extraDirsRaw = opts?.config?.skills?.load?.extraDirs ?? [];
-  const extraDirs = extraDirsRaw.map((d) => normalizeOptionalString(d) ?? "").filter(Boolean);
-  const pluginSkillDirs = resolvePluginSkillDirs({
+  const extraDirs = extraDirsRaw
+    .map((d) => normalizeOptionalString(d) ?? "")
+    .filter(Boolean)
+    .map((dir) => resolveUserPath(dir));
+  const pluginSkillDirs = resolveVersionedPluginSkillDirs({
     workspaceDir,
     config: opts?.config,
+    snapshotVersion: opts?.snapshotVersion,
   });
   const mergedExtraDirs = [...extraDirs, ...pluginSkillDirs];
+  const cacheKey = resolveWorkspaceSkillEntriesCacheKey({
+    workspaceDir,
+    snapshotVersion: opts?.snapshotVersion,
+    managedSkillsDir,
+    bundledSkillsDir,
+    extraDirs,
+    pluginSkillDirs,
+    limits,
+  });
+  const cachedEntries = readCachedWorkspaceSkillEntries(cacheKey, {
+    clone: opts?.cloneCachedEntries !== false,
+  });
+  if (cachedEntries) {
+    return cachedEntries;
+  }
 
   const bundledSkills = bundledSkillsDir
     ? loadSkills({
@@ -646,9 +796,8 @@ function loadSkillEntries(
       })
     : [];
   const extraSkills = mergedExtraDirs.flatMap((dir) => {
-    const resolved = resolveUserPath(dir);
     return loadSkills({
-      dir: resolved,
+      dir,
       source: "openclaw-extra",
     });
   });
@@ -723,7 +872,7 @@ function loadSkillEntries(
         },
       };
     });
-  return skillEntries;
+  return rememberWorkspaceSkillEntries({ cacheKey, entries: skillEntries });
 }
 
 function escapeXml(str: string): string {
@@ -816,7 +965,7 @@ function applySkillsPromptLimits(params: {
 
 export function buildWorkspaceSkillSnapshot(
   workspaceDir: string,
-  opts?: WorkspaceSkillBuildOptions & { snapshotVersion?: number },
+  opts?: WorkspaceSkillBuildOptions,
 ): SkillSnapshot {
   const { eligible, prompt, resolvedSkills } = resolveWorkspaceSkillPromptState(workspaceDir, opts);
   const skillFilter = resolveEffectiveWorkspaceSkillFilter(opts);
@@ -846,6 +995,7 @@ type WorkspaceSkillBuildOptions = {
   bundledSkillsDir?: string;
   entries?: SkillEntry[];
   agentId?: string;
+  snapshotVersion?: number;
   /** If provided, only include skills with these names */
   skillFilter?: string[];
   eligibility?: SkillEligibilityContext;
@@ -871,7 +1021,12 @@ function resolveWorkspaceSkillPromptState(
   prompt: string;
   resolvedSkills: Skill[];
 } {
-  const skillEntries = opts?.entries ?? loadSkillEntries(workspaceDir, opts);
+  const skillEntries =
+    opts?.entries ??
+    loadSkillEntries(workspaceDir, {
+      ...opts,
+      cloneCachedEntries: false,
+    });
   const effectiveSkillFilter = resolveEffectiveWorkspaceSkillFilter(opts);
   const eligible = filterSkillEntries(
     skillEntries,
@@ -881,7 +1036,7 @@ function resolveWorkspaceSkillPromptState(
   );
   const promptEntries = eligible.filter((entry) => isSkillVisibleInAvailableSkillsPrompt(entry));
   const remoteNote = opts?.eligibility?.remote?.note?.trim();
-  const resolvedSkills = promptEntries.map((entry) => entry.skill);
+  const resolvedSkills = promptEntries.map((entry) => cloneSkillForSnapshot(entry.skill));
   // Derive prompt-facing skills with compacted paths (e.g. ~/...) once.
   // Budget checks and final render both use this same representation so the
   // tier decision is based on the exact strings that end up in the prompt.
@@ -907,6 +1062,13 @@ function resolveWorkspaceSkillPromptState(
     .filter(Boolean)
     .join("\n");
   return { eligible, prompt, resolvedSkills };
+}
+
+function cloneSkillForSnapshot(skill: Skill): Skill {
+  return {
+    ...skill,
+    sourceInfo: skill.sourceInfo ? { ...skill.sourceInfo } : skill.sourceInfo,
+  };
 }
 
 export function resolveSkillsPromptForRun(params: {
@@ -939,6 +1101,7 @@ export function loadWorkspaceSkillEntries(
     bundledSkillsDir?: string;
     skillFilter?: string[];
     agentId?: string;
+    snapshotVersion?: number;
     eligibility?: SkillEligibilityContext;
   },
 ): SkillEntry[] {

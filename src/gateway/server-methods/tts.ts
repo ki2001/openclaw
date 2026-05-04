@@ -2,7 +2,7 @@ import { normalizeOptionalString } from "../../shared/string-coerce.js";
 import {
   canonicalizeSpeechProviderId,
   getSpeechProvider,
-  listSpeechProviders,
+  listLoadedSpeechProviders,
 } from "../../tts/provider-registry.js";
 import {
   getResolvedSpeechProviderConfig,
@@ -37,7 +37,7 @@ export const ttsHandlers: GatewayRequestHandlers = {
       const fallbackProviders = resolveTtsProviderOrder(provider, cfg)
         .slice(1)
         .filter((candidate) => isTtsProviderConfigured(config, candidate, cfg));
-      const providerStates = listSpeechProviders(cfg).map((candidate) => ({
+      const providerStates = listLoadedSpeechProviders(cfg).map((candidate) => ({
         id: candidate.id,
         label: candidate.label,
         configured: candidate.isConfigured({
@@ -225,7 +225,7 @@ export const ttsHandlers: GatewayRequestHandlers = {
       const config = resolveTtsConfig(cfg);
       const prefsPath = resolveTtsPrefsPath(config);
       respond(true, {
-        providers: listSpeechProviders(cfg).map((provider) => ({
+        providers: listLoadedSpeechProviders(cfg).map((provider) => ({
           id: provider.id,
           name: provider.label,
           configured: provider.isConfigured({

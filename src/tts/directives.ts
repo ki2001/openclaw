@@ -1,7 +1,7 @@
 import type { OpenClawConfig } from "../config/types.js";
 import type { SpeechProviderPlugin } from "../plugins/types.js";
 import { normalizeLowercaseStringOrEmpty } from "../shared/string-coerce.js";
-import { listSpeechProviders } from "./provider-registry.js";
+import { getSpeechProvider, listLoadedSpeechProviders } from "./provider-registry.js";
 import type {
   SpeechModelOverridePolicy,
   SpeechProviderConfig,
@@ -40,7 +40,14 @@ function resolveDirectiveProviders(options?: ParseTtsDirectiveOptions): SpeechPr
   if (options?.providers) {
     return [...options.providers].toSorted(buildProviderOrder);
   }
-  return listSpeechProviders(options?.cfg).toSorted(buildProviderOrder);
+  const preferredProviderId = normalizeLowercaseStringOrEmpty(options?.preferredProviderId);
+  if (preferredProviderId && options?.cfg) {
+    const preferredProvider = getSpeechProvider(preferredProviderId, options.cfg);
+    if (preferredProvider) {
+      return [preferredProvider];
+    }
+  }
+  return listLoadedSpeechProviders(options?.cfg).toSorted(buildProviderOrder);
 }
 
 function resolveDirectiveProviderConfig(
@@ -276,7 +283,9 @@ export function parseTtsDirectives(
         return directiveProviders;
       }
       if (declaredProviderId) {
-        const declaredProvider = resolveDirectiveProvider(getProviders(), declaredProviderId);
+        const declaredProvider =
+          (options?.cfg ? getSpeechProvider(declaredProviderId, options.cfg) : undefined) ??
+          resolveDirectiveProvider(getProviders(), declaredProviderId);
         if (!declaredProvider) {
           warnings.push(`unknown provider "${declaredProviderId}"`);
           directiveProviders = [];

@@ -38,6 +38,39 @@ function normalizeModelSelectionForTest(value: unknown): string | undefined {
   return normalizeOptionalString((value as { primary?: unknown }).primary);
 }
 
+function resolveModelRefFromStringForTest(params: {
+  raw: string;
+  defaultProvider: string;
+}): { ref: { provider: string; model: string } } | null {
+  const trimmed = params.raw.trim();
+  if (!trimmed) {
+    return null;
+  }
+  const slash = trimmed.indexOf("/");
+  if (slash < 0) {
+    return { ref: { provider: params.defaultProvider, model: trimmed } };
+  }
+  if (slash === 0 || slash === trimmed.length - 1) {
+    return null;
+  }
+  return {
+    ref: {
+      provider: trimmed.slice(0, slash).trim().toLowerCase(),
+      model: trimmed.slice(slash + 1).trim(),
+    },
+  };
+}
+
+function resolveModelCatalogScopeForTest(params: { provider: string; model: string }): {
+  providerRefs: string[];
+  modelRefs: string[];
+} {
+  return {
+    providerRefs: [params.provider],
+    modelRefs: [`${params.provider}/${params.model}`, params.model],
+  };
+}
+
 export const buildWorkspaceSkillSnapshotMock = createMock();
 export const resolveAgentConfigMock = createMock();
 export const resolveEffectiveModelFallbacksMock = createMock();
@@ -48,6 +81,10 @@ export const isCliProviderMock = createMock();
 export const resolveAllowedModelRefMock = createMock();
 export const resolveConfiguredModelRefMock = createMock();
 export const resolveHooksGmailModelMock = createMock();
+export const buildModelAliasIndexMock = createMock();
+export const inferUniqueProviderFromConfiguredModelsMock = createMock();
+export const resolveModelCatalogScopeMock = createMock();
+export const resolveModelRefFromStringMock = createMock();
 export const resolveThinkingDefaultMock = createMock();
 export const runWithModelFallbackMock = createMock();
 export const runEmbeddedPiAgentMock = createMock();
@@ -152,9 +189,17 @@ vi.mock("./skills-snapshot.runtime.js", () => ({
 vi.mock("./run-model-selection.runtime.js", () => ({
   DEFAULT_MODEL: "gpt-5.4",
   DEFAULT_PROVIDER: "openai",
+  buildModelAliasIndex: (...args: unknown[]) =>
+    buildModelAliasIndexMock(...args) ?? { byAlias: new Map(), byKey: new Map() },
+  inferUniqueProviderFromConfiguredModels: (...args: unknown[]) =>
+    inferUniqueProviderFromConfiguredModelsMock(...args),
   loadModelCatalog: loadModelCatalogMock,
   getModelRefStatus: getModelRefStatusMock,
   normalizeModelSelection: normalizeModelSelectionForTest,
+  resolveModelCatalogScope: (...args: [{ provider: string; model: string }]) =>
+    resolveModelCatalogScopeMock(...args) ?? resolveModelCatalogScopeForTest(args[0]),
+  resolveModelRefFromString: (...args: [{ raw: string; defaultProvider: string }]) =>
+    resolveModelRefFromStringMock(...args) ?? resolveModelRefFromStringForTest(args[0]),
   resolveAllowedModelRef: resolveAllowedModelRefMock,
   resolveConfiguredModelRef: resolveConfiguredModelRefMock,
   resolveHooksGmailModel: resolveHooksGmailModelMock,
@@ -317,6 +362,10 @@ function resetRunConfigMocks(): void {
   resolveConfiguredModelRefMock.mockReturnValue({ provider: "openai", model: "gpt-5.4" });
   resolveAllowedModelRefMock.mockReturnValue({ ref: { provider: "openai", model: "gpt-5.4" } });
   resolveHooksGmailModelMock.mockReturnValue(null);
+  buildModelAliasIndexMock.mockReturnValue({ byAlias: new Map(), byKey: new Map() });
+  inferUniqueProviderFromConfiguredModelsMock.mockReturnValue(undefined);
+  resolveModelCatalogScopeMock.mockImplementation(resolveModelCatalogScopeForTest);
+  resolveModelRefFromStringMock.mockImplementation(resolveModelRefFromStringForTest);
   resolveThinkingDefaultMock.mockReturnValue("off");
   getModelRefStatusMock.mockReturnValue({ allowed: false });
   resolveCronStyleNowMock.mockReturnValue({

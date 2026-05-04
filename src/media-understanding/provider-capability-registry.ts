@@ -17,12 +17,14 @@ function mergeProviderCapabilities(
 
 export function buildMediaUnderstandingCapabilityRegistry(
   cfg?: OpenClawConfig,
+  options?: { providerIds?: readonly string[] },
 ): MediaUnderstandingCapabilityRegistry {
   const registry: MediaUnderstandingCapabilityRegistry = new Map();
 
   for (const provider of resolvePluginCapabilityProviders({
     key: "mediaUnderstandingProviders",
     cfg,
+    ...(options?.providerIds ? { providerIds: options.providerIds } : {}),
   })) {
     mergeProviderCapabilities(registry, provider);
   }
