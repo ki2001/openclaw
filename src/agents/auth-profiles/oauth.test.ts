@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { OpenClawConfig } from "../../config/config.js";
 import type { AuthProfileStore } from "./types.js";
 
@@ -9,11 +9,14 @@ vi.mock("../cli-credentials.js", () => ({
   resetCliCredentialCachesForTest: () => undefined,
 }));
 
-vi.mock("../../plugins/provider-runtime.runtime.js", () => ({
-  formatProviderAuthProfileApiKeyWithPlugin: async (params: { context?: { access?: string } }) =>
-    params.context?.access,
-  refreshProviderOAuthCredentialWithPlugin: async () => null,
+const providerRuntimeMocks = vi.hoisted(() => ({
+  formatProviderAuthProfileApiKeyWithPlugin: vi.fn(
+    async (params: { context?: { access?: string } }) => params.context?.access,
+  ),
+  refreshProviderOAuthCredentialWithPlugin: vi.fn(async () => null),
 }));
+
+vi.mock("../../plugins/provider-runtime.runtime.js", () => providerRuntimeMocks);
 
 let resolveApiKeyForProfile: typeof import("./oauth.js").resolveApiKeyForProfile;
 
@@ -112,6 +115,15 @@ async function expectResolvedApiKey(params: {
 
 beforeAll(loadOAuthModuleForTest);
 
+beforeEach(() => {
+  providerRuntimeMocks.formatProviderAuthProfileApiKeyWithPlugin.mockReset();
+  providerRuntimeMocks.formatProviderAuthProfileApiKeyWithPlugin.mockImplementation(
+    async (params: { context?: { access?: string } }) => params.context?.access,
+  );
+  providerRuntimeMocks.refreshProviderOAuthCredentialWithPlugin.mockReset();
+  providerRuntimeMocks.refreshProviderOAuthCredentialWithPlugin.mockResolvedValue(null);
+});
+
 afterAll(() => {
   vi.doUnmock("../cli-credentials.js");
   vi.doUnmock("../../plugins/provider-runtime.runtime.js");
@@ -203,6 +215,46 @@ describe("resolveApiKeyForProfile config compatibility", () => {
       apiKey: "access-123", // pragma: allowlist secret
       provider: "anthropic",
       email: undefined,
+    });
+  });
+
+  it("uses provider plugin formatters for non-Google OAuth access tokens", async () => {
+    const profileId = "anthropic:oauth";
+    const cfg = cfgFor(profileId, "anthropic", "oauth");
+    const store: AuthProfileStore = {
+      version: 1,
+      profiles: {
+        [profileId]: {
+          type: "oauth",
+          provider: "anthropic",
+          access: "access-123",
+          refresh: "refresh-123",
+          expires: createUsableOAuthExpiry(),
+        },
+      },
+    };
+    providerRuntimeMocks.formatProviderAuthProfileApiKeyWithPlugin.mockResolvedValueOnce(
+      "formatted-access-123",
+    );
+
+    const result = await resolveApiKeyForProfile({
+      cfg,
+      store,
+      profileId,
+    });
+
+    expect(result).toEqual({
+      apiKey: "formatted-access-123", // pragma: allowlist secret
+      provider: "anthropic",
+      email: undefined,
+    });
+    expect(providerRuntimeMocks.formatProviderAuthProfileApiKeyWithPlugin).toHaveBeenCalledWith({
+      provider: "anthropic",
+      config: cfg,
+      context: expect.objectContaining({
+        access: "access-123",
+        provider: "anthropic",
+      }),
     });
   });
 });

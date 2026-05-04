@@ -82,17 +82,14 @@ function shouldAppendAttemptCacheTtl(params: {
   timedOutDuringCompaction: boolean;
   compactionOccurredThisAttempt: boolean;
   config?: OpenClawConfig;
-  provider: string;
-  modelId: string;
-  modelApi?: string;
-  isCacheTtlEligibleProvider: (provider: string, modelId: string, modelApi?: string) => boolean;
+  cacheTtlProviderEligible: boolean;
 }): boolean {
   if (params.timedOutDuringCompaction || params.compactionOccurredThisAttempt) {
     return false;
   }
   return (
     params.config?.agents?.defaults?.contextPruning?.mode === "cache-ttl" &&
-    params.isCacheTtlEligibleProvider(params.provider, params.modelId, params.modelApi)
+    params.cacheTtlProviderEligible
   );
 }
 
@@ -105,8 +102,7 @@ export function appendAttemptCacheTtlIfNeeded(params: {
   config?: OpenClawConfig;
   provider: string;
   modelId: string;
-  modelApi?: string;
-  isCacheTtlEligibleProvider: (provider: string, modelId: string, modelApi?: string) => boolean;
+  cacheTtlProviderEligible: boolean;
   now?: number;
 }): boolean {
   if (!shouldAppendAttemptCacheTtl(params)) {

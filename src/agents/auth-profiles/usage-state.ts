@@ -1,6 +1,32 @@
 import { normalizeProviderId } from "../provider-id.js";
 import type { AuthProfileStore, ProfileUsageStats } from "./types.js";
 
+export function resetUsageStats(
+  existing: ProfileUsageStats | undefined,
+  overrides?: Partial<ProfileUsageStats>,
+): ProfileUsageStats {
+  return {
+    ...existing,
+    errorCount: 0,
+    cooldownUntil: undefined,
+    cooldownReason: undefined,
+    cooldownModel: undefined,
+    disabledUntil: undefined,
+    disabledReason: undefined,
+    failureCounts: undefined,
+    ...overrides,
+  };
+}
+
+export function updateUsageStatsEntry(
+  store: AuthProfileStore,
+  profileId: string,
+  updater: (existing: ProfileUsageStats | undefined) => ProfileUsageStats,
+): void {
+  store.usageStats = store.usageStats ?? {};
+  store.usageStats[profileId] = updater(store.usageStats[profileId]);
+}
+
 export function isAuthCooldownBypassedForProvider(provider: string | undefined): boolean {
   const normalized = normalizeProviderId(provider ?? "");
   return normalized === "openrouter" || normalized === "kilocode";

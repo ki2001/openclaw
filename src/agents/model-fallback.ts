@@ -786,6 +786,8 @@ export async function runWithModelFallback<T>(params: {
   sessionId?: string;
   lane?: string;
   agentDir?: string;
+  authStore?: AuthProfileStore;
+  preflightAuthCooldown?: boolean;
   /** Optional explicit fallbacks list; when provided (even empty), replaces agents.defaults.model.fallbacks. */
   fallbacksOverride?: string[];
   run: ModelFallbackRunFn<T>;
@@ -799,17 +801,21 @@ export async function runWithModelFallback<T>(params: {
     model: params.model,
     fallbacksOverride: params.fallbacksOverride,
   });
+  const shouldPreflightAuthCooldown = params.preflightAuthCooldown !== false;
   const authRuntime =
-    params.cfg && hasAnyAuthProfileStoreSource(params.agentDir)
+    shouldPreflightAuthCooldown &&
+    params.cfg &&
+    (params.authStore || hasAnyAuthProfileStoreSource(params.agentDir))
       ? await loadModelFallbackAuthRuntime()
       : null;
   const authStore = authRuntime
-    ? authRuntime.ensureAuthProfileStore(params.agentDir, {
+    ? (params.authStore ??
+      authRuntime.ensureAuthProfileStore(params.agentDir, {
         externalCli: externalCliDiscoveryForProviders({
           cfg: params.cfg,
           providers: candidates.map((candidate) => candidate.provider),
         }),
-      })
+      }))
     : null;
   const attempts: FallbackAttempt[] = [];
   let lastError: unknown;

@@ -1,3 +1,4 @@
+import type { AuthProfileStore } from "../../../agents/auth-profiles.js";
 import type { ExecToolDefaults } from "../../../agents/bash-tools.js";
 import type { CurrentTurnPromptContext } from "../../../agents/pi-embedded-runner/run/params.js";
 import type { SkillSnapshot } from "../../../agents/skills.js";
@@ -79,6 +80,8 @@ export type FollowupRun = {
     modelOverrideSource?: "auto" | "user";
     authProfileId?: string;
     authProfileIdSource?: "auto" | "user";
+    authProfileOrder?: string[];
+    authProfileStore?: AuthProfileStore;
     thinkLevel?: ThinkLevel;
     verboseLevel?: VerboseLevel;
     reasoningLevel?: ReasoningLevel;

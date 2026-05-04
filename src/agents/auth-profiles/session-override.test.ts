@@ -6,7 +6,10 @@ import {
   type OpenClawTestState,
   withOpenClawTestState,
 } from "../../test-utils/openclaw-test-state.js";
-import { resolveSessionAuthProfileOverride } from "./session-override.js";
+import {
+  resolveSessionAuthProfileOverride,
+  resolveSessionAuthProfileOverrideState,
+} from "./session-override.js";
 import type { AuthProfileStore } from "./types.js";
 
 const authStoreMocks = vi.hoisted(() => {
@@ -18,6 +21,7 @@ const authStoreMocks = vi.hoisted(() => {
   return {
     state,
     ensureAuthProfileStore: vi.fn(() => state.store),
+    ensureAuthProfileStoreWithoutExternalProfiles: vi.fn(() => state.store),
     hasAnyAuthProfileStoreSource: vi.fn(() => state.hasSource),
     isProfileInCooldown: vi.fn(() => false),
     reset() {
@@ -43,6 +47,8 @@ const authStoreMocks = vi.hoisted(() => {
 
 vi.mock("./store.js", () => ({
   ensureAuthProfileStore: authStoreMocks.ensureAuthProfileStore,
+  ensureAuthProfileStoreWithoutExternalProfiles:
+    authStoreMocks.ensureAuthProfileStoreWithoutExternalProfiles,
   hasAnyAuthProfileStoreSource: authStoreMocks.hasAnyAuthProfileStoreSource,
 }));
 
@@ -154,6 +160,79 @@ describe("resolveSessionAuthProfileOverride", () => {
 
       expect(resolved).toBe("zai:work");
       expect(sessionEntry.authProfileOverride).toBe("zai:work");
+    });
+  });
+
+  it("returns the auth store loaded while resolving the override", async () => {
+    await withAuthState(async (state) => {
+      const agentDir = state.agentDir();
+      await fs.mkdir(agentDir, { recursive: true });
+      authStoreMocks.state.hasSource = true;
+      authStoreMocks.state.store = createAuthStore();
+
+      const sessionEntry: SessionEntry = {
+        sessionId: "s1",
+        updatedAt: Date.now(),
+        authProfileOverride: "zai:work",
+        authProfileOverrideSource: "user",
+      };
+      const sessionStore = { "agent:main:main": sessionEntry };
+
+      const resolved = await resolveSessionAuthProfileOverrideState({
+        cfg: {} as OpenClawConfig,
+        provider: "z.ai",
+        agentDir,
+        sessionEntry,
+        sessionStore,
+        sessionKey: "agent:main:main",
+        storePath: undefined,
+        isNewSession: false,
+      });
+
+      expect(resolved.authProfileId).toBe("zai:work");
+      expect(resolved.authProfileOrder).toEqual(["zai:work"]);
+      expect(resolved.authStore).toBe(authStoreMocks.state.store);
+      expect(authStoreMocks.ensureAuthProfileStoreWithoutExternalProfiles).toHaveBeenCalledTimes(1);
+      expect(authStoreMocks.ensureAuthProfileStore).not.toHaveBeenCalled();
+    });
+  });
+
+  it("hydrates external auth only when persisted profiles cannot satisfy selection", async () => {
+    await withAuthState(async (state) => {
+      const agentDir = state.agentDir();
+      await fs.mkdir(agentDir, { recursive: true });
+      authStoreMocks.state.hasSource = true;
+      const persistedStore: AuthProfileStore = {
+        version: 1,
+        profiles: {},
+      };
+      const externalStore = createAuthStore();
+      authStoreMocks.ensureAuthProfileStoreWithoutExternalProfiles.mockReturnValueOnce(
+        persistedStore,
+      );
+      authStoreMocks.ensureAuthProfileStore.mockReturnValueOnce(externalStore);
+
+      const sessionEntry: SessionEntry = {
+        sessionId: "s1",
+        updatedAt: Date.now(),
+      };
+      const sessionStore = { "agent:main:main": sessionEntry };
+
+      const resolved = await resolveSessionAuthProfileOverrideState({
+        cfg: {} as OpenClawConfig,
+        provider: "z.ai",
+        agentDir,
+        sessionEntry,
+        sessionStore,
+        sessionKey: "agent:main:main",
+        storePath: undefined,
+        isNewSession: false,
+      });
+
+      expect(resolved.authProfileId).toBe("zai:work");
+      expect(resolved.authStore).toBe(externalStore);
+      expect(authStoreMocks.ensureAuthProfileStoreWithoutExternalProfiles).toHaveBeenCalledTimes(1);
+      expect(authStoreMocks.ensureAuthProfileStore).toHaveBeenCalledTimes(1);
     });
   });
 

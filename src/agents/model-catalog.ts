@@ -15,6 +15,7 @@ import {
 } from "../shared/string-coerce.js";
 import { resolveOpenClawAgentDir } from "./agent-paths.js";
 import { modelSupportsInput as modelCatalogEntrySupportsInput } from "./model-catalog-lookup.js";
+import { resolveProviderDiscoveryProviderIdsForCatalogScope } from "./model-catalog-scope.js";
 import type { ModelCatalogEntry, ModelInputType } from "./model-catalog.types.js";
 import { buildConfiguredModelCatalog } from "./model-selection-shared.js";
 import { ensureOpenClawModelsJson } from "./models-config.js";
@@ -289,6 +290,9 @@ export async function loadModelCatalog(params?: {
   config?: OpenClawConfig;
   useCache?: boolean;
   readOnly?: boolean;
+  workspaceDir?: string;
+  providerRefs?: string[];
+  modelRefs?: string[];
 }): Promise<ModelCatalogEntry[]> {
   const readOnly = params?.readOnly === true;
   if (readOnly) {
@@ -300,10 +304,14 @@ export async function loadModelCatalog(params?: {
       return loadReadOnlyStaticModelCatalog(params);
     }
   }
-  if (!readOnly && params?.useCache === false) {
+  const scopedCatalog =
+    Boolean(params?.workspaceDir) ||
+    Boolean(params?.providerRefs?.length) ||
+    Boolean(params?.modelRefs?.length);
+  if (!readOnly && !scopedCatalog && params?.useCache === false) {
     modelCatalogPromise = null;
   }
-  if (!readOnly && modelCatalogPromise) {
+  if (!readOnly && !scopedCatalog && modelCatalogPromise) {
     return modelCatalogPromise;
   }
 
@@ -322,7 +330,13 @@ export async function loadModelCatalog(params?: {
     try {
       const cfg = params?.config ?? getRuntimeConfig();
       if (!readOnly) {
-        await ensureOpenClawModelsJson(cfg);
+        const providerDiscoveryProviderIds = resolveProviderDiscoveryProviderIdsForCatalogScope({
+          providerRefs: params?.providerRefs,
+          modelRefs: params?.modelRefs,
+        });
+        await ensureOpenClawModelsJson(cfg, undefined, {
+          ...(providerDiscoveryProviderIds ? { providerDiscoveryProviderIds } : {}),
+        });
         logStage("models-json-ready");
       }
       // IMPORTANT: keep the dynamic import *inside* the try/catch.
@@ -376,10 +390,14 @@ export async function loadModelCatalog(params?: {
       if (!readOnly) {
         const supplemental = await augmentModelCatalogWithProviderPlugins({
           config: cfg,
+          workspaceDir: params?.workspaceDir,
+          providerRefs: params?.providerRefs,
+          modelRefs: params?.modelRefs,
           env: process.env,
           context: {
             config: cfg,
             agentDir,
+            workspaceDir: params?.workspaceDir,
             env: process.env,
             entries: [...models],
           },
@@ -422,7 +440,7 @@ export async function loadModelCatalog(params?: {
     }
   };
 
-  if (readOnly) {
+  if (readOnly || scopedCatalog) {
     return loadCatalog();
   }
 

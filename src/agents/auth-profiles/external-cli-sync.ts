@@ -235,12 +235,6 @@ export function resolveExternalCliAuthProfiles(
     if (!isExternalCliProviderInScope({ providerConfig, store, options })) {
       continue;
     }
-    const creds = providerConfig.readCredentials({
-      allowKeychainPrompt: options?.allowKeychainPrompt,
-    });
-    if (!creds) {
-      continue;
-    }
     const existing = store.profiles[providerConfig.profileId];
     const existingOAuth =
       existing?.type === "oauth" && existing.provider === providerConfig.provider
@@ -256,10 +250,12 @@ export function resolveExternalCliAuthProfiles(
       continue;
     }
     if (providerConfig.bootstrapOnly && existingOAuth) {
-      log.debug("kept local oauth over external cli bootstrap-only provider", {
-        profileId: providerConfig.profileId,
-        provider: providerConfig.provider,
-      });
+      continue;
+    }
+    const creds = providerConfig.readCredentials({
+      allowKeychainPrompt: options?.allowKeychainPrompt,
+    });
+    if (!creds) {
       continue;
     }
     if (existingOAuth && !isSafeToUseExternalCliCredential(existingOAuth, creds)) {

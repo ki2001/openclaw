@@ -157,6 +157,36 @@ describe("embedded attempt context injection", () => {
     expect(resolveBootstrapContextForRun).toHaveBeenCalledTimes(1);
   });
 
+  it("skips lightweight default bootstrap context without resolving workspace files", async () => {
+    const { result, hasCompletedBootstrapTurn, resolveBootstrapContextForRun } =
+      await resolveBootstrapContext({
+        contextInjectionMode: "always",
+        bootstrapContextMode: "lightweight",
+        bootstrapContextRunKind: "default",
+      });
+
+    expect(result.bootstrapFiles).toEqual([]);
+    expect(result.contextFiles).toEqual([]);
+    expect(result.shouldRecordCompletedBootstrapTurn).toBe(false);
+    expect(hasCompletedBootstrapTurn).not.toHaveBeenCalled();
+    expect(resolveBootstrapContextForRun).not.toHaveBeenCalled();
+  });
+
+  it("skips lightweight cron bootstrap context without resolving workspace files", async () => {
+    const { result, hasCompletedBootstrapTurn, resolveBootstrapContextForRun } =
+      await resolveBootstrapContext({
+        contextInjectionMode: "always",
+        bootstrapContextMode: "lightweight",
+        bootstrapContextRunKind: "cron",
+      });
+
+    expect(result.bootstrapFiles).toEqual([]);
+    expect(result.contextFiles).toEqual([]);
+    expect(result.shouldRecordCompletedBootstrapTurn).toBe(false);
+    expect(hasCompletedBootstrapTurn).not.toHaveBeenCalled();
+    expect(resolveBootstrapContextForRun).not.toHaveBeenCalled();
+  });
+
   it("runs full bootstrap injection after a successful non-heartbeat turn", async () => {
     const resolver = vi.fn(async () => ({
       bootstrapFiles: [{ name: "AGENTS.md", content: "bootstrap context" }],

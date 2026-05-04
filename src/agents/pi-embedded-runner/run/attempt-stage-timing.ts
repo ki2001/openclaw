@@ -1,75 +1,54 @@
-export type EmbeddedRunStageTiming = {
-  name: string;
-  durationMs: number;
-  elapsedMs: number;
-};
+import {
+  type StageSummary,
+  type StageTiming,
+  type StageTracker,
+} from "../../../infra/stage-timing.js";
 
-export type EmbeddedRunStageSummary = {
-  totalMs: number;
-  stages: EmbeddedRunStageTiming[];
-};
+export type EmbeddedRunStageTiming = StageTiming;
+export type EmbeddedRunStageSummary = StageSummary;
+export type EmbeddedRunStageTracker = StageTracker;
 
-export type EmbeddedRunStageTracker = {
-  mark: (name: string) => void;
-  snapshot: () => EmbeddedRunStageSummary;
-};
-
-const EMBEDDED_RUN_STAGE_WARN_TOTAL_MS = 10_000;
-const EMBEDDED_RUN_STAGE_WARN_STAGE_MS = 5_000;
-
-export function createEmbeddedRunStageTracker(options?: {
-  now?: () => number;
-}): EmbeddedRunStageTracker {
-  const now = options?.now ?? Date.now;
-  const startedAt = now();
-  let previousAt = startedAt;
-  const stages: EmbeddedRunStageTiming[] = [];
-
-  const toMs = (value: number) => Math.max(0, Math.round(value));
-
-  return {
-    mark(name) {
-      const currentAt = now();
-      stages.push({
-        name,
-        durationMs: toMs(currentAt - previousAt),
-        elapsedMs: toMs(currentAt - startedAt),
-      });
-      previousAt = currentAt;
-    },
-    snapshot() {
-      return {
-        totalMs: toMs(now() - startedAt),
-        stages: stages.slice(),
-      };
-    },
-  };
-}
-
-export function shouldWarnEmbeddedRunStageSummary(
-  summary: EmbeddedRunStageSummary,
-  options?: {
-    totalThresholdMs?: number;
-    stageThresholdMs?: number;
-  },
-): boolean {
-  const totalThresholdMs = options?.totalThresholdMs ?? EMBEDDED_RUN_STAGE_WARN_TOTAL_MS;
-  const stageThresholdMs = options?.stageThresholdMs ?? EMBEDDED_RUN_STAGE_WARN_STAGE_MS;
-  return (
-    summary.totalMs >= totalThresholdMs ||
-    summary.stages.some((stage) => stage.durationMs >= stageThresholdMs)
-  );
-}
-
-export function formatEmbeddedRunStageSummary(
-  prefix: string,
-  summary: EmbeddedRunStageSummary,
-): string {
-  const stages =
-    summary.stages.length > 0
-      ? summary.stages
-          .map((stage) => `${stage.name}:${stage.durationMs}ms@${stage.elapsedMs}ms`)
-          .join(",")
-      : "none";
-  return `${prefix} totalMs=${summary.totalMs} stages=${stages}`;
-}
+export const EmbeddedRunStageName = {
+  workspaceSessionPrep: "workspace-session-prep",
+  pluginRuntimeLoading: "plugin-runtime-loading",
+  replyHooks: "reply-hooks",
+  harnessPrep: "harness-prep",
+  modelSelection: "model-selection",
+  authSelection: "auth-selection",
+  authControllerCreate: "auth-controller-create",
+  authProfileInitialize: "auth-profile-initialize",
+  authResolution: "auth-resolution",
+  contextEnginePrep: "context-engine-prep",
+  retryAttemptPrep: "retry-attempt-prep",
+  providerRuntimeLookup: "provider-runtime-lookup",
+  skillPrep: "skill-prep",
+  toolPlanning: "tool-planning",
+  toolMaterialization: "tool-materialization",
+  bootstrapContext: "bootstrap-context",
+  pluginCapabilityLoading: "plugin-capability-loading",
+  systemPrompt: "system-prompt",
+  sessionWriteLock: "session-write-lock",
+  sessionTranscriptRepair: "session-transcript-repair",
+  sessionManagerOpen: "session-manager-open",
+  contextEngineBootstrap: "context-engine-bootstrap",
+  sessionManagerPrepare: "session-manager-prepare",
+  piSettings: "pi-settings",
+  extensionFactoryBuild: "extension-factory-build",
+  resourceLoaderCreate: "resource-loader-create",
+  sessionResourceLoader: "session-resource-loader",
+  agentSession: "agent-session",
+  streamSetup: "stream-setup",
+  promptCacheTraceSetup: "prompt-cache-trace-setup",
+  streamWrapperSetup: "stream-wrapper-setup",
+  sessionHistoryPrepare: "session-history-prepare",
+  subscriptionSetup: "subscription-setup",
+  activeRunRegistration: "active-run-registration",
+  modelRequestPrep: "model-request-prep",
+  modelExecution: "model-execution",
+  promptFinalization: "prompt-finalization",
+  compactionRetryWait: "compaction-retry-wait",
+  attemptStateCapture: "attempt-state-capture",
+  contextEngineFinalize: "context-engine-finalize",
+  subscriptionCleanup: "subscription-cleanup",
+  attemptResultBuild: "attempt-result-build",
+} as const;

@@ -11,7 +11,10 @@ export function resolveEmbeddedRunSkillEntries(params: {
   shouldLoadSkillEntries: boolean;
   skillEntries: SkillEntry[];
 } {
-  const shouldLoadSkillEntries = !params.skillsSnapshot || !params.skillsSnapshot.resolvedSkills;
+  const hasPreparedSnapshot = Boolean(
+    params.skillsSnapshot?.resolvedSkills || params.skillsSnapshot?.prompt?.trim(),
+  );
+  const shouldLoadSkillEntries = !hasPreparedSnapshot;
   const config = resolveSkillRuntimeConfig(params.config);
   return {
     shouldLoadSkillEntries,

@@ -23,6 +23,7 @@ import { stripHeartbeatToken } from "../heartbeat.js";
 import type { GetReplyOptions, ReplyPayload } from "../types.js";
 import { runPreflightCompactionIfNeeded } from "./agent-runner-memory.js";
 import {
+  buildEmbeddedRunBaseParams,
   resolveQueuedReplyExecutionConfig,
   resolveQueuedReplyRuntimeConfig,
   resolveModelFallbackOptions,
@@ -261,22 +262,30 @@ export function createFollowupRunner(params: {
       replyOperation.setPhase("running");
       try {
         const outcomePlan = buildAgentRuntimeOutcomePlan();
+        const modelFallbackOptions = resolveModelFallbackOptions(run, runtimeConfig);
         const fallbackResult = await runWithModelFallback<EmbeddedAgentRunResult>({
-          ...resolveModelFallbackOptions(run, runtimeConfig),
+          ...modelFallbackOptions,
           cfg: runtimeConfig,
           runId,
           classifyResult: ({ result, provider, model }) =>
             outcomePlan.classifyRunResult({ result, provider, model }),
           run: async (provider, model, runOptions) => {
             const authProfile = resolveRunAuthProfile(run, provider, { config: runtimeConfig });
+            const runBaseParams = buildEmbeddedRunBaseParams({
+              run: { ...run, config: runtimeConfig },
+              provider,
+              model,
+              runId,
+              authProfile,
+              allowTransientCooldownProbe: runOptions?.allowTransientCooldownProbe,
+              modelFallbacksOverride: modelFallbackOptions.fallbacksOverride,
+            });
             let attemptCompactionCount = 0;
             try {
               const result = await runEmbeddedPiAgent({
                 allowGatewaySubagentBinding: true,
                 replyOperation,
-                sessionId: run.sessionId,
-                sessionKey: run.sessionKey,
-                agentId: run.agentId,
+                ...runBaseParams,
                 trigger: "user",
                 messageChannel: queued.originatingChannel ?? undefined,
                 messageProvider: run.messageProvider,
@@ -295,36 +304,14 @@ export function createFollowupRunner(params: {
                 senderName: run.senderName,
                 senderUsername: run.senderUsername,
                 senderE164: run.senderE164,
-                senderIsOwner: run.senderIsOwner,
-                sessionFile: run.sessionFile,
-                agentDir: run.agentDir,
-                workspaceDir: run.workspaceDir,
-                config: runtimeConfig,
-                skillsSnapshot: run.skillsSnapshot,
                 prompt: queued.prompt,
                 transcriptPrompt: queued.transcriptPrompt,
                 currentTurnContext: queued.currentTurnContext,
                 extraSystemPrompt: run.extraSystemPrompt,
-                silentReplyPromptMode: run.silentReplyPromptMode,
-                sourceReplyDeliveryMode: run.sourceReplyDeliveryMode,
                 forceMessageTool: run.sourceReplyDeliveryMode === "message_tool_only",
-                ownerNumbers: run.ownerNumbers,
-                enforceFinalTag: run.enforceFinalTag,
-                allowEmptyAssistantReplyAsSilent: run.allowEmptyAssistantReplyAsSilent,
-                provider,
-                model,
-                ...authProfile,
-                thinkLevel: run.thinkLevel,
-                verboseLevel: run.verboseLevel,
-                reasoningLevel: run.reasoningLevel,
                 suppressToolErrorWarnings: opts?.suppressToolErrorWarnings,
-                execOverrides: run.execOverrides,
-                bashElevated: run.bashElevated,
-                timeoutMs: run.timeoutMs,
-                runId,
                 images: queuedImages,
                 imageOrder: queuedImageOrder,
-                allowTransientCooldownProbe: runOptions?.allowTransientCooldownProbe,
                 blockReplyBreak: run.blockReplyBreak,
                 bootstrapPromptWarningSignaturesSeen,
                 bootstrapPromptWarningSignature:

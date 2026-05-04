@@ -1,3 +1,4 @@
+import type { ProviderRuntimePluginHandle } from "../../plugins/provider-hook-runtime.js";
 import { resolveProviderCacheTtlEligibility } from "../../plugins/provider-runtime.js";
 import {
   normalizeLowercaseStringOrEmpty,
@@ -28,11 +29,21 @@ export function isCacheTtlEligibleProvider(
   provider: string,
   modelId: string,
   modelApi?: string,
+  options?: {
+    config?: Parameters<typeof resolveProviderCacheTtlEligibility>[0]["config"];
+    workspaceDir?: string;
+    env?: NodeJS.ProcessEnv;
+    runtimeHandle?: ProviderRuntimePluginHandle;
+  },
 ): boolean {
   const normalizedProvider = normalizeLowercaseStringOrEmpty(provider);
   const normalizedModelId = normalizeLowercaseStringOrEmpty(modelId);
   const pluginEligibility = resolveProviderCacheTtlEligibility({
     provider: normalizedProvider,
+    config: options?.config,
+    workspaceDir: options?.workspaceDir,
+    env: options?.env,
+    runtimeHandle: options?.runtimeHandle,
     context: {
       provider: normalizedProvider,
       modelId: normalizedModelId,

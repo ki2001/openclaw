@@ -160,6 +160,15 @@ vi.mock("./model-auth-env-vars.js", () => {
   };
 });
 
+const providerRuntimeMocks = vi.hoisted(() => ({
+  shouldDeferProviderSyntheticProfileAuthWithPlugin: vi.fn(
+    (params: { provider: string; context: { resolvedApiKey?: string } }) => {
+      const expectedMarker = params.provider === "demo-local" ? "demo-local" : undefined;
+      return Boolean(expectedMarker && params.context.resolvedApiKey?.trim() === expectedMarker);
+    },
+  ),
+}));
+
 vi.mock("../plugins/provider-runtime.js", () => ({
   buildProviderMissingAuthMessageWithPlugin: (params: {
     provider: string;
@@ -194,13 +203,8 @@ vi.mock("../plugins/provider-runtime.js", () => ({
     };
   },
   resolveExternalAuthProfilesWithPlugins: () => [],
-  shouldDeferProviderSyntheticProfileAuthWithPlugin: (params: {
-    provider: string;
-    context: { resolvedApiKey?: string };
-  }) => {
-    const expectedMarker = params.provider === "demo-local" ? "demo-local" : undefined;
-    return Boolean(expectedMarker && params.context.resolvedApiKey?.trim() === expectedMarker);
-  },
+  shouldDeferProviderSyntheticProfileAuthWithPlugin:
+    providerRuntimeMocks.shouldDeferProviderSyntheticProfileAuthWithPlugin,
 }));
 
 vi.mock("../plugins/providers.js", () => ({
@@ -223,6 +227,12 @@ beforeEach(() => {
   cliCredentialMocks.readClaudeCliCredentialsCached.mockReset().mockReturnValue(null);
   cliCredentialMocks.readCodexCliCredentialsCached.mockReset().mockReturnValue(null);
   cliCredentialMocks.readMiniMaxCliCredentialsCached.mockReset().mockReturnValue(null);
+  providerRuntimeMocks.shouldDeferProviderSyntheticProfileAuthWithPlugin
+    .mockReset()
+    .mockImplementation((params: { provider: string; context: { resolvedApiKey?: string } }) => {
+      const expectedMarker = params.provider === "demo-local" ? "demo-local" : undefined;
+      return Boolean(expectedMarker && params.context.resolvedApiKey?.trim() === expectedMarker);
+    });
 });
 
 afterEach(() => {
@@ -809,6 +819,43 @@ describe("getApiKeyForModel", () => {
     expect(resolved.apiKey).toBe("stored-demo-key");
     expect(resolved.source).toBe("profile:demo-local:default");
     expect(resolved.profileId).toBe("demo-local:default");
+  });
+
+  it("does not consult synthetic deferral hooks for real stored profile keys", async () => {
+    const resolved = await resolveApiKeyForProvider({
+      provider: "demo-local",
+      profileId: "demo-local:default",
+      store: buildDemoLocalStore(["real-demo-key"]),
+      cfg: buildDemoLocalProviderCfg("DEMO_LOCAL_API_KEY"),
+    });
+
+    expect(resolved.apiKey).toBe("real-demo-key");
+    expect(
+      providerRuntimeMocks.shouldDeferProviderSyntheticProfileAuthWithPlugin,
+    ).not.toHaveBeenCalled();
+  });
+
+  it("does not consult synthetic deferral hooks for token profiles", async () => {
+    const resolved = await resolveApiKeyForProvider({
+      provider: "demo-local",
+      profileId: "demo-local:token",
+      store: {
+        version: 1,
+        profiles: {
+          "demo-local:token": {
+            type: "token",
+            provider: "demo-local",
+            token: "real-demo-token",
+          },
+        },
+      },
+      cfg: buildDemoLocalProviderCfg("DEMO_LOCAL_API_KEY"),
+    });
+
+    expect(resolved.apiKey).toBe("real-demo-token");
+    expect(
+      providerRuntimeMocks.shouldDeferProviderSyntheticProfileAuthWithPlugin,
+    ).not.toHaveBeenCalled();
   });
 
   it("defers every stored synthetic local profile until real auth sources are checked", async () => {

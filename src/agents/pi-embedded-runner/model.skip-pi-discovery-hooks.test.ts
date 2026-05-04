@@ -76,4 +76,30 @@ describe("resolveModelAsync skipPiDiscovery runtime hooks", () => {
     expect(mocks.applyProviderResolvedTransportWithPlugin).not.toHaveBeenCalled();
     expect(mocks.normalizeProviderTransportWithPlugin).not.toHaveBeenCalled();
   });
+
+  it("reuses successful target-provider dynamic model resolution", async () => {
+    const options = { skipPiDiscovery: true } as const;
+
+    const first = await resolveModelAsync(
+      "ollama",
+      "llama3.2:cache",
+      "/tmp/agent-cache",
+      undefined,
+      options,
+    );
+    const second = await resolveModelAsync(
+      "ollama",
+      "llama3.2:cache",
+      "/tmp/agent-cache",
+      undefined,
+      options,
+    );
+
+    expect(first.model).toMatchObject({ provider: "ollama", id: "llama3.2:cache" });
+    expect(second.model).toBe(first.model);
+    expect(mocks.discoverAuthStorage).not.toHaveBeenCalled();
+    expect(mocks.discoverModels).not.toHaveBeenCalled();
+    expect(mocks.prepareProviderDynamicModel).toHaveBeenCalledTimes(1);
+    expect(mocks.runProviderDynamicModel).toHaveBeenCalledTimes(1);
+  });
 });

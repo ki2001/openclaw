@@ -1,7 +1,6 @@
 import {
   resolveAgentModelFallbackValues,
   resolveAgentModelPrimaryValue,
-  toAgentModelListLike,
 } from "../config/model-input.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
 import {
@@ -211,26 +210,11 @@ export function resolveDefaultModelForAgent(params: {
   const agentModelOverride = params.agentId
     ? resolveAgentEffectiveModelPrimary(params.cfg, params.agentId)
     : undefined;
-  const cfg =
-    agentModelOverride && agentModelOverride.length > 0
-      ? {
-          ...params.cfg,
-          agents: {
-            ...params.cfg.agents,
-            defaults: {
-              ...params.cfg.agents?.defaults,
-              model: {
-                ...toAgentModelListLike(params.cfg.agents?.defaults?.model),
-                primary: agentModelOverride,
-              },
-            },
-          },
-        }
-      : params.cfg;
   return resolveConfiguredModelRef({
-    cfg,
+    cfg: params.cfg,
     defaultProvider: DEFAULT_PROVIDER,
     defaultModel: DEFAULT_MODEL,
+    ...(agentModelOverride ? { primaryModelOverride: agentModelOverride } : {}),
   });
 }
 

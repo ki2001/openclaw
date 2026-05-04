@@ -485,8 +485,18 @@ function resolveAwsSdkAuthInfo(): { mode: "aws-sdk"; source: string } {
 function shouldDeferSyntheticProfileAuth(params: {
   cfg: OpenClawConfig | undefined;
   provider: string;
+  profileType: "api_key" | "token" | "oauth" | undefined;
   resolvedApiKey: string | undefined;
 }): boolean {
+  if (
+    params.profileType !== "api_key" ||
+    !isSyntheticProfileMarkerCandidate({
+      provider: params.provider,
+      resolvedApiKey: params.resolvedApiKey,
+    })
+  ) {
+    return false;
+  }
   const providerConfig = resolveProviderConfig(params.cfg, params.provider);
   return (
     shouldDeferProviderSyntheticProfileAuthWithPlugin({
@@ -500,6 +510,20 @@ function shouldDeferSyntheticProfileAuth(params: {
       },
     }) === true
   );
+}
+
+function isSyntheticProfileMarkerCandidate(params: {
+  provider: string;
+  resolvedApiKey: string | undefined;
+}): boolean {
+  const trimmed = params.resolvedApiKey?.trim();
+  if (!trimmed) {
+    return false;
+  }
+  if (isNonSecretApiKeyMarker(trimmed)) {
+    return true;
+  }
+  return normalizeProviderId(trimmed) === normalizeProviderId(params.provider);
 }
 
 function resolveScopedAuthProfileStore(params: {
@@ -565,6 +589,7 @@ export async function resolveApiKeyForProvider(params: {
       shouldDeferSyntheticProfileAuth({
         cfg,
         provider,
+        profileType: mode,
         resolvedApiKey: resolved.apiKey,
       })
     ) {
@@ -661,6 +686,7 @@ export async function resolveApiKeyForProvider(params: {
           shouldDeferSyntheticProfileAuth({
             cfg,
             provider,
+            profileType: mode,
             resolvedApiKey: resolved.apiKey,
           })
         ) {

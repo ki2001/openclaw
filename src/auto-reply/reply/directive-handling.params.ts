@@ -6,6 +6,10 @@ import type { MsgContext } from "../templating.js";
 import type { InlineDirectives } from "./directive-handling.parse.js";
 import type { ElevatedLevel, ReasoningLevel, ThinkLevel, VerboseLevel } from "./directives.js";
 
+type ThinkingCatalogOptions = {
+  hydrateRuntimeCatalog?: boolean;
+};
+
 export type HandleDirectiveOnlyCoreParams = {
   cfg: OpenClawConfig;
   directives: InlineDirectives;
@@ -56,7 +60,9 @@ export type ApplyInlineDirectivesFastLaneParams = HandleDirectiveOnlyCoreParams 
   agentCfg?: NonNullable<OpenClawConfig["agents"]>["defaults"];
   modelState: {
     resolveDefaultThinkingLevel: () => Promise<ThinkLevel | undefined>;
-    resolveThinkingCatalog: () => Promise<ModelCatalogEntry[] | undefined>;
+    resolveThinkingCatalog: (
+      options?: ThinkingCatalogOptions,
+    ) => Promise<ModelCatalogEntry[] | undefined>;
     allowedModelKeys: Set<string>;
     allowedModelCatalog: Awaited<
       ReturnType<typeof import("../../agents/model-catalog.js").loadModelCatalog>

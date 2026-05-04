@@ -3,7 +3,7 @@ import { clearAgentHarnesses } from "../harness/registry.js";
 import type { CompactionTranscriptRotation } from "./compaction-successor-transcript.js";
 
 type MockResolvedModel = {
-  model: { provider: string; api: string; id: string; input: unknown[] };
+  model: { provider: string; api: string; id: string; input: unknown[]; compat?: unknown };
   error: null;
   authStorage: { setRuntimeApiKey: Mock<(provider?: string, apiKey?: string) => void> };
   modelRegistry: Record<string, never>;
@@ -279,11 +279,31 @@ export async function loadCompactHooksHarness(): Promise<{
       };
       return { session };
     }),
-    DefaultResourceLoader: function DefaultResourceLoader() {
-      return {
-        reload: vi.fn(async () => undefined),
-      };
-    },
+    createEventBus: vi.fn(() => ({})),
+    createExtensionRuntime: vi.fn(() => ({
+      flagValues: new Map(),
+      pendingProviderRegistrations: [],
+      refreshTools: vi.fn(),
+      sendMessage: vi.fn(),
+      sendUserMessage: vi.fn(),
+      appendEntry: vi.fn(),
+      setSessionName: vi.fn(),
+      getSessionName: vi.fn(),
+      setLabel: vi.fn(),
+      getActiveTools: vi.fn(() => []),
+      getAllTools: vi.fn(() => []),
+      setActiveTools: vi.fn(),
+      getCommands: vi.fn(() => []),
+      setModel: vi.fn(async () => true),
+      getThinkingLevel: vi.fn(() => "medium"),
+      setThinkingLevel: vi.fn(),
+      registerProvider: vi.fn(),
+      unregisterProvider: vi.fn(),
+    })),
+    createSyntheticSourceInfo: vi.fn((path: string, info: Record<string, unknown>) => ({
+      path,
+      ...info,
+    })),
     SessionManager: {
       open: vi.fn(() => ({})),
     },
@@ -317,7 +337,6 @@ export async function loadCompactHooksHarness(): Promise<{
     applyLocalNoAuthHeaderOverride: vi.fn((model: unknown) => model),
     ensureAuthProfileStoreWithoutExternalProfiles: vi.fn(() => ({})),
     getApiKeyForModel: vi.fn(async () => ({ apiKey: "test", mode: "env" })),
-    resolveModelAuthMode: vi.fn(() => "env"),
   }));
 
   vi.doMock("../sandbox.js", () => ({

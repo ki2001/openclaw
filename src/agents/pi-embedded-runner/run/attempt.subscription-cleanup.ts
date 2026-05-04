@@ -14,6 +14,16 @@ export function buildEmbeddedSubscriptionParams(
   return params;
 }
 
+export function resolveEmbeddedSubscriptionFinalTag(params: {
+  enforceFinalTag?: boolean;
+  reasoningTagHint: boolean;
+  skipProviderRuntimeHints?: boolean;
+}): boolean {
+  return params.skipProviderRuntimeHints === true
+    ? false
+    : params.enforceFinalTag || params.reasoningTagHint;
+}
+
 export async function cleanupEmbeddedAttemptResources(params: {
   removeToolResultContextGuard?: () => void;
   flushPendingToolResultsAfterIdle: (params: {

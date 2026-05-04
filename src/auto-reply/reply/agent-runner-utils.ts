@@ -20,7 +20,6 @@ import {
   normalizeOptionalLowercaseString,
   normalizeOptionalString,
 } from "../../shared/string-coerce.js";
-import { isReasoningTagProvider } from "../../utils/provider-utils.js";
 import type { TemplateContext } from "../templating.js";
 import {
   resolveProviderScopedAuthProfile,
@@ -28,11 +27,13 @@ import {
 } from "./agent-runner-auth-profile.js";
 export { resolveProviderScopedAuthProfile, resolveRunAuthProfile };
 import {
-  buildEmbeddedRunBaseParams as buildEmbeddedRunBaseParamsCore,
+  buildEmbeddedRunBaseParams,
   resolveModelFallbackOptions,
-  resolveEnforceFinalTagWithResolver,
 } from "./agent-runner-run-params.js";
-export { resolveModelFallbackOptions } from "./agent-runner-run-params.js";
+export {
+  buildEmbeddedRunBaseParams,
+  resolveModelFallbackOptions,
+} from "./agent-runner-run-params.js";
 import { resolveOriginMessageProvider, resolveOriginMessageTo } from "./origin-routing.js";
 import type { FollowupRun } from "./queue.js";
 
@@ -174,21 +175,6 @@ export const formatBunFetchSocketError = (message: string) => {
   ].join("\n");
 };
 
-export const resolveEnforceFinalTag = (
-  run: FollowupRun["run"],
-  provider: string,
-  model = run.model,
-) => resolveEnforceFinalTagWithResolver(run, provider, model, isReasoningTagProvider);
-
-export function buildEmbeddedRunBaseParams(
-  params: Parameters<typeof buildEmbeddedRunBaseParamsCore>[0],
-) {
-  return buildEmbeddedRunBaseParamsCore({
-    ...params,
-    isReasoningTagProvider,
-  });
-}
-
 function buildEmbeddedContextFromTemplate(params: {
   run: FollowupRun["run"];
   sessionCtx: TemplateContext;
@@ -263,6 +249,7 @@ export function buildEmbeddedRunExecutionParams(params: {
   model: string;
   runId: string;
   allowTransientCooldownProbe?: boolean;
+  modelFallbacksOverride?: ReturnType<typeof resolveModelFallbackOptions>["fallbacksOverride"];
 }) {
   const { authProfile, embeddedContext, senderContext } = buildEmbeddedRunContexts(params);
   const runBaseParams = buildEmbeddedRunBaseParams({
@@ -272,6 +259,7 @@ export function buildEmbeddedRunExecutionParams(params: {
     runId: params.runId,
     authProfile,
     allowTransientCooldownProbe: params.allowTransientCooldownProbe,
+    modelFallbacksOverride: params.modelFallbacksOverride,
   });
   return {
     embeddedContext,

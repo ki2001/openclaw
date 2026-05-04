@@ -2,6 +2,7 @@ import type { AgentMessage } from "@mariozechner/pi-agent-core";
 import type { SessionManager } from "@mariozechner/pi-coding-agent";
 import { stripInboundMetadata } from "../../auto-reply/reply/strip-inbound-meta.js";
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
+import type { ProviderRuntimePluginHandle } from "../../plugins/provider-hook-runtime.js";
 import type { ProviderRuntimeModel } from "../../plugins/provider-runtime-model.types.js";
 import {
   sanitizeProviderReplayHistoryWithPlugin,
@@ -68,6 +69,7 @@ type ProviderReplayHookParams = {
   modelApi?: string | null;
   model?: ProviderRuntimeModel;
   sessionId?: string;
+  runtimeHandle?: ProviderRuntimePluginHandle;
 };
 
 function createProviderReplayPluginParams(params: ProviderReplayHookParams) {
@@ -86,6 +88,7 @@ function createProviderReplayPluginParams(params: ProviderReplayHookParams) {
     config: params.config,
     workspaceDir: params.workspaceDir,
     env: params.env,
+    runtimeHandle: params.runtimeHandle,
     context,
   };
 }
@@ -593,6 +596,7 @@ export async function sanitizeSessionHistory(params: {
   sessionManager: SessionManager;
   sessionId: string;
   policy?: TranscriptPolicy;
+  runtimeHandle?: ProviderRuntimePluginHandle;
 }): Promise<AgentMessage[]> {
   // Keep docs/reference/transcript-hygiene.md in sync with any logic changes here.
   const policy =
@@ -749,6 +753,7 @@ export async function validateReplayTurns(params: {
   model?: ProviderRuntimeModel;
   sessionId?: string;
   policy?: TranscriptPolicy;
+  runtimeHandle?: ProviderRuntimePluginHandle;
 }): Promise<AgentMessage[]> {
   const policy =
     params.policy ??

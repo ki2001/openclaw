@@ -8,6 +8,7 @@ import type { OpenClawConfig } from "../../../config/types.openclaw.js";
 import type { PromptImageOrderEntry } from "../../../media/prompt-image-order.js";
 import type { CommandQueueEnqueueFn } from "../../../process/command-queue.types.js";
 import type { InputProvenance } from "../../../sessions/input-provenance.js";
+import type { AuthProfileStore } from "../../auth-profiles.js";
 import type { ExecElevatedDefaults, ExecToolDefaults } from "../../bash-tools.exec-types.js";
 import type { AgentStreamParams, ClientToolDefinition } from "../../command/shared-types.js";
 import type { AgentInternalEvent } from "../../internal-events.js";
@@ -125,6 +126,8 @@ export type RunEmbeddedPiAgentParams = {
   agentHarnessId?: string;
   authProfileId?: string;
   authProfileIdSource?: "auto" | "user";
+  authProfileOrder?: string[];
+  authProfileStore?: AuthProfileStore;
   thinkLevel?: ThinkLevel;
   fastMode?: boolean;
   verboseLevel?: VerboseLevel;
@@ -179,6 +182,7 @@ export type RunEmbeddedPiAgentParams = {
   streamParams?: AgentStreamParams;
   ownerNumbers?: string[];
   enforceFinalTag?: boolean;
+  skipProviderRuntimeHints?: boolean;
   silentExpected?: boolean;
   /**
    * Treat a clean empty assistant stop as an intentional silent reply.

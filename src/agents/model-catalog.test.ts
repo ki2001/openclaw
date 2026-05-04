@@ -187,6 +187,64 @@ describe("loadModelCatalog", () => {
     });
   });
 
+  it("keeps scoped plugin catalog loads out of the full catalog cache", async () => {
+    mockSingleOpenAiCatalogModel();
+    const cfg = {} as OpenClawConfig;
+
+    await loadModelCatalog({ config: cfg });
+    augmentCatalogMock.mockClear();
+
+    await loadModelCatalog({
+      config: cfg,
+      workspaceDir: "/workspace",
+      providerRefs: ["openrouter"],
+      modelRefs: ["openrouter/x-ai/grok-4"],
+    });
+    await loadModelCatalog({
+      config: cfg,
+      workspaceDir: "/workspace",
+      providerRefs: ["anthropic"],
+      modelRefs: ["anthropic/claude-sonnet-4-6"],
+    });
+
+    expect(augmentCatalogMock).toHaveBeenCalledTimes(2);
+    expect(augmentCatalogMock).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        workspaceDir: "/workspace",
+        providerRefs: ["openrouter"],
+        modelRefs: ["openrouter/x-ai/grok-4"],
+      }),
+    );
+    expect(augmentCatalogMock).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        workspaceDir: "/workspace",
+        providerRefs: ["anthropic"],
+        modelRefs: ["anthropic/claude-sonnet-4-6"],
+      }),
+    );
+
+    augmentCatalogMock.mockClear();
+    await loadModelCatalog({ config: cfg });
+    expect(augmentCatalogMock).not.toHaveBeenCalled();
+  });
+
+  it("scopes models.json provider discovery to requested catalog providers", async () => {
+    mockSingleOpenAiCatalogModel();
+    const cfg = {} as OpenClawConfig;
+
+    await loadModelCatalog({
+      config: cfg,
+      providerRefs: ["openai-codex"],
+      modelRefs: ["openai-codex/gpt-5.4", "gpt-5.4"],
+    });
+
+    expect(ensureOpenClawModelsJsonMock).toHaveBeenCalledWith(cfg, undefined, {
+      providerDiscoveryProviderIds: ["openai-codex"],
+    });
+  });
+
   it("returns partial results on discovery errors", async () => {
     setLoggerOverride({ level: "silent", consoleLevel: "warn" });
     try {

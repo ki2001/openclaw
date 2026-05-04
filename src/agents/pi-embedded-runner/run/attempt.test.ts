@@ -21,6 +21,7 @@ import {
   resolveAttemptFsWorkspaceOnly,
   resolveEmbeddedAgentStreamFn,
   resolveUnknownToolGuardThreshold,
+  shouldCreateBundleLspRuntimeForAttempt,
   shouldCreateBundleMcpRuntimeForAttempt,
   resolveAttemptToolPolicyMessageProvider,
   resolvePromptBuildHookResult,
@@ -161,37 +162,31 @@ describe("normalizeMessagesForLlmBoundary", () => {
   });
 });
 
-describe("shouldCreateBundleMcpRuntimeForAttempt", () => {
-  it("skips bundle MCP when tools are disabled or unavailable", () => {
-    expect(shouldCreateBundleMcpRuntimeForAttempt({ toolsEnabled: false })).toBe(false);
-    expect(shouldCreateBundleMcpRuntimeForAttempt({ toolsEnabled: true, disableTools: true })).toBe(
-      false,
-    );
+describe.each([
+  ["bundle MCP", shouldCreateBundleMcpRuntimeForAttempt, ["bundle-mcp", "strict__strict_probe"]],
+  [
+    "bundle LSP",
+    shouldCreateBundleLspRuntimeForAttempt,
+    ["bundle-lsp", "lsp_hover_typescript", "LSP_*"],
+  ],
+] as const)("%s runtime planning", (_label, shouldCreateRuntime, allowedTools) => {
+  it("skips runtime creation when tools are disabled or unavailable", () => {
+    expect(shouldCreateRuntime({ toolsEnabled: false })).toBe(false);
+    expect(shouldCreateRuntime({ toolsEnabled: true, disableTools: true })).toBe(false);
   });
 
-  it("creates bundle MCP only when the allowlist can reach bundle MCP tool names", () => {
-    expect(shouldCreateBundleMcpRuntimeForAttempt({ toolsEnabled: true })).toBe(true);
-    expect(shouldCreateBundleMcpRuntimeForAttempt({ toolsEnabled: true, toolsAllow: [] })).toBe(
-      true,
-    );
+  it("creates the runtime only when the allowlist can reach its tool names", () => {
+    expect(shouldCreateRuntime({ toolsEnabled: true })).toBe(true);
+    expect(shouldCreateRuntime({ toolsEnabled: true, toolsAllow: [] })).toBe(true);
     expect(
-      shouldCreateBundleMcpRuntimeForAttempt({
+      shouldCreateRuntime({
         toolsEnabled: true,
         toolsAllow: ["memory_search", "memory_get"],
       }),
     ).toBe(false);
-    expect(
-      shouldCreateBundleMcpRuntimeForAttempt({
-        toolsEnabled: true,
-        toolsAllow: ["bundle-mcp"],
-      }),
-    ).toBe(true);
-    expect(
-      shouldCreateBundleMcpRuntimeForAttempt({
-        toolsEnabled: true,
-        toolsAllow: ["strict__strict_probe"],
-      }),
-    ).toBe(true);
+    for (const toolName of allowedTools) {
+      expect(shouldCreateRuntime({ toolsEnabled: true, toolsAllow: [toolName] })).toBe(true);
+    }
   });
 });
 

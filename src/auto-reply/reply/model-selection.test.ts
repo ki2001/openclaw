@@ -109,7 +109,7 @@ describe("createModelSelectionState catalog loading", () => {
     expect(loadModelCatalog).not.toHaveBeenCalled();
   });
 
-  it("hydrates runtime catalog metadata when the configured allowlist entry lacks reasoning", async () => {
+  it("does not hydrate runtime catalog metadata for ordinary thinking defaults", async () => {
     vi.mocked(loadModelCatalog).mockClear();
     vi.mocked(loadModelCatalog).mockResolvedValueOnce([
       { provider: "openai-codex", id: "gpt-5.4", name: "GPT-5.4", reasoning: true },
@@ -142,7 +142,51 @@ describe("createModelSelectionState catalog loading", () => {
       hasModelDirective: false,
     });
 
-    await expect(state.resolveDefaultThinkingLevel()).resolves.toBe("medium");
+    await expect(state.resolveDefaultThinkingLevel()).resolves.toBe("off");
+    expect(loadModelCatalog).not.toHaveBeenCalled();
+  });
+
+  it("hydrates runtime catalog metadata only when explicit thinking handling asks for it", async () => {
+    vi.mocked(loadModelCatalog).mockClear();
+    vi.mocked(loadModelCatalog).mockResolvedValueOnce([
+      { provider: "openai-codex", id: "gpt-5.4", name: "GPT-5.4", reasoning: true },
+    ]);
+    const cfg = {
+      agents: {
+        defaults: {
+          models: {
+            "openai-codex/gpt-5.4": {},
+          },
+        },
+      },
+      models: {
+        providers: {
+          "openai-codex": {
+            baseUrl: "https://api.openai.com/v1",
+            models: [makeConfiguredModel({ reasoning: undefined })],
+          },
+        },
+      },
+    } as OpenClawConfig;
+
+    const state = await createModelSelectionState({
+      cfg,
+      agentCfg: cfg.agents?.defaults,
+      defaultProvider: "openai-codex",
+      defaultModel: "gpt-5.4",
+      provider: "openai-codex",
+      model: "gpt-5.4",
+      hasModelDirective: false,
+    });
+
+    await expect(
+      state.resolveThinkingCatalog({ hydrateRuntimeCatalog: false }),
+    ).resolves.toHaveLength(1);
+    expect(loadModelCatalog).not.toHaveBeenCalled();
+
+    await expect(
+      state.resolveThinkingCatalog({ hydrateRuntimeCatalog: true }),
+    ).resolves.toHaveLength(1);
     expect(loadModelCatalog).toHaveBeenCalledOnce();
   });
 

@@ -7,9 +7,15 @@ import {
 import type { SessionEntry } from "../../config/sessions.js";
 import { createReplyOperation } from "./reply-run-registry.js";
 
-vi.mock("../../agents/auth-profiles/session-override.js", () => ({
-  resolveSessionAuthProfileOverride: vi.fn().mockResolvedValue(undefined),
-}));
+vi.mock("../../agents/auth-profiles/session-override.js", () => {
+  const resolveSessionAuthProfileOverride = vi.fn().mockResolvedValue(undefined);
+  return {
+    resolveSessionAuthProfileOverride,
+    resolveSessionAuthProfileOverrideState: vi.fn(async (params: unknown) => ({
+      authProfileId: await resolveSessionAuthProfileOverride(params),
+    })),
+  };
+});
 
 vi.mock("../../agents/pi-embedded.runtime.js", () => ({
   abortEmbeddedPiRun: vi.fn().mockReturnValue(false),
@@ -56,10 +62,6 @@ vi.mock(import("../../routing/session-key.js"), async (importOriginal) => {
     normalizeAgentId: (id: string | undefined | null) => id ?? "default",
   };
 });
-
-vi.mock("../../utils/provider-utils.js", () => ({
-  isReasoningTagProvider: vi.fn().mockReturnValue(false),
-}));
 
 vi.mock("../command-detection.js", () => ({
   hasControlCommand: vi.fn().mockReturnValue(false),
@@ -122,6 +124,28 @@ vi.mock("./session-system-events.js", () => ({
 }));
 
 vi.mock("./typing-mode.js", () => ({
+  createTypingSignaler: vi.fn(
+    (params: {
+      typing: { startTypingLoop: () => Promise<void> };
+      mode: string;
+      isHeartbeat: boolean;
+    }) => ({
+      mode: params.mode,
+      shouldStartImmediately: params.mode === "instant",
+      shouldStartOnMessageStart: params.mode === "message",
+      shouldStartOnText: params.mode === "message" || params.mode === "instant",
+      shouldStartOnReasoning: params.mode === "thinking",
+      signalRunStart: vi.fn(async () => {
+        if (!params.isHeartbeat && params.mode === "instant") {
+          await params.typing.startTypingLoop();
+        }
+      }),
+      signalMessageStart: vi.fn(async () => {}),
+      signalTextDelta: vi.fn(async () => {}),
+      signalReasoningDelta: vi.fn(async () => {}),
+      signalToolStart: vi.fn(async () => {}),
+    }),
+  ),
   resolveTypingMode: vi.fn().mockReturnValue("off"),
 }));
 
@@ -129,6 +153,7 @@ let runPreparedReply: typeof import("./get-reply-run.js").runPreparedReply;
 let runReplyAgent: typeof import("./agent-runner.runtime.js").runReplyAgent;
 let routeReply: typeof import("./route-reply.runtime.js").routeReply;
 let drainFormattedSystemEvents: typeof import("./session-system-events.js").drainFormattedSystemEvents;
+let ensureSkillSnapshot: typeof import("./session-updates.runtime.js").ensureSkillSnapshot;
 let resolveTypingMode: typeof import("./typing-mode.js").resolveTypingMode;
 let buildDirectChatContext: typeof import("./groups.js").buildDirectChatContext;
 let buildGroupChatContext: typeof import("./groups.js").buildGroupChatContext;
@@ -212,6 +237,12 @@ function baseParams(
     model: "claude-opus-4-1",
     typing: {
       onReplyStart: vi.fn().mockResolvedValue(undefined),
+      startTypingLoop: vi.fn().mockResolvedValue(undefined),
+      startTypingOnText: vi.fn().mockResolvedValue(undefined),
+      refreshTypingTtl: vi.fn(),
+      isActive: vi.fn(() => false),
+      markRunComplete: vi.fn(),
+      markDispatchIdle: vi.fn(),
       cleanup: vi.fn(),
     } as never,
     defaultProvider: "anthropic",
@@ -242,6 +273,7 @@ describe("runPreparedReply media-only handling", () => {
     ({ runReplyAgent } = await import("./agent-runner.runtime.js"));
     ({ routeReply } = await import("./route-reply.runtime.js"));
     ({ drainFormattedSystemEvents } = await import("./session-system-events.js"));
+    ({ ensureSkillSnapshot } = await import("./session-updates.runtime.js"));
     ({ resolveTypingMode } = await import("./typing-mode.js"));
     ({ buildDirectChatContext, buildGroupChatContext } = await import("./groups.js"));
     ({ buildInboundUserContextPrefix } = await import("./inbound-meta.js"));
@@ -1441,6 +1473,50 @@ describe("runPreparedReply media-only handling", () => {
       | { suppressTyping?: boolean }
       | undefined;
     expect(call?.suppressTyping).toBe(true);
+  });
+
+  it("starts instant typing before skill snapshot prep", async () => {
+    const order: string[] = [];
+    const previousFastEnv = process.env.OPENCLAW_TEST_FAST;
+    process.env.OPENCLAW_TEST_FAST = "0";
+    vi.mocked(resolveTypingMode).mockReturnValueOnce("instant");
+    vi.mocked(ensureSkillSnapshot).mockImplementationOnce(async ({ sessionEntry, systemSent }) => {
+      order.push("skills");
+      return {
+        sessionEntry,
+        systemSent,
+        skillsSnapshot: undefined,
+      };
+    });
+    const typing = {
+      onReplyStart: vi.fn().mockResolvedValue(undefined),
+      startTypingLoop: vi.fn(async () => {
+        order.push("typing");
+      }),
+      startTypingOnText: vi.fn().mockResolvedValue(undefined),
+      refreshTypingTtl: vi.fn(),
+      isActive: vi.fn(() => false),
+      markRunComplete: vi.fn(),
+      markDispatchIdle: vi.fn(),
+      cleanup: vi.fn(),
+    };
+
+    try {
+      await runPreparedReply(
+        baseParams({
+          typing: typing as never,
+        }),
+      );
+
+      expect(typing.startTypingLoop).toHaveBeenCalledOnce();
+      expect(order.slice(0, 2)).toEqual(["typing", "skills"]);
+    } finally {
+      if (previousFastEnv === undefined) {
+        delete process.env.OPENCLAW_TEST_FAST;
+      } else {
+        process.env.OPENCLAW_TEST_FAST = previousFastEnv;
+      }
+    }
   });
 
   it("routes queued system events into user prompt text, not system prompt context", async () => {

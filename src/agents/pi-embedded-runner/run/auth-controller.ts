@@ -1,6 +1,7 @@
 import type { Api, Model } from "@mariozechner/pi-ai";
 import type { ThinkLevel } from "../../../auto-reply/thinking.js";
 import { formatErrorMessage } from "../../../infra/errors.js";
+import type { ProviderRuntimePluginHandle } from "../../../plugins/provider-hook-runtime.js";
 import { prepareProviderRuntimeAuth } from "../../../plugins/provider-runtime.js";
 import {
   type AuthProfileStore,
@@ -46,6 +47,7 @@ export function createEmbeddedRunAuthController(params: {
   workspaceDir: string;
   authStore: AuthProfileStore;
   authStorage: RuntimeApiKeySink;
+  providerRuntimeHandle?: ProviderRuntimePluginHandle;
   profileCandidates: Array<string | undefined>;
   lockedProfileId?: string;
   initialThinkLevel: ThinkLevel;
@@ -126,6 +128,7 @@ export function createEmbeddedRunAuthController(params: {
       config: params.config,
       workspaceDir: params.workspaceDir,
       env: process.env,
+      runtimeHandle: params.providerRuntimeHandle,
       context: {
         config: params.config,
         agentDir: params.agentDir,

@@ -1,6 +1,7 @@
 import type { StreamFn } from "@mariozechner/pi-agent-core";
 import type { Api, Model } from "@mariozechner/pi-ai";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
+import type { ProviderRuntimePluginHandle } from "../plugins/provider-hook-runtime.js";
 import { resolveProviderStreamFn } from "../plugins/provider-runtime.js";
 import { ensureCustomApiRegistered } from "./custom-api-registry.js";
 import { createTransportAwareStreamFnForModel } from "./provider-transport-stream.js";
@@ -11,6 +12,7 @@ export function registerProviderStreamForModel<TApi extends Api>(params: {
   agentDir?: string;
   workspaceDir?: string;
   env?: NodeJS.ProcessEnv;
+  providerRuntimeHandle?: ProviderRuntimePluginHandle;
 }): StreamFn | undefined {
   const streamFn =
     resolveProviderStreamFn({
@@ -18,6 +20,7 @@ export function registerProviderStreamForModel<TApi extends Api>(params: {
       config: params.cfg,
       workspaceDir: params.workspaceDir,
       env: params.env,
+      runtimeHandle: params.providerRuntimeHandle,
       context: {
         config: params.cfg,
         agentDir: params.agentDir,
@@ -32,6 +35,7 @@ export function registerProviderStreamForModel<TApi extends Api>(params: {
       agentDir: params.agentDir,
       workspaceDir: params.workspaceDir,
       env: params.env,
+      providerRuntimeHandle: params.providerRuntimeHandle,
     });
   if (!streamFn) {
     return undefined;

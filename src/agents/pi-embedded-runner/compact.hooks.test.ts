@@ -241,6 +241,12 @@ describe("compactEmbeddedPiSessionDirect hooks", () => {
       },
       messages: [{ role: "user", content: "hello" }],
     };
+    const runtimePlan = {
+      prompt: {},
+      transport: {
+        resolveExtraParams: vi.fn(() => ({})),
+      },
+    };
 
     compactTesting.prepareCompactionSessionAgent({
       session: session as never,
@@ -258,6 +264,7 @@ describe("compactEmbeddedPiSessionDirect hooks", () => {
       sessionAgentId: "main",
       effectiveWorkspace: "/tmp/workspace",
       agentDir: "/tmp/workspace",
+      runtimePlan: runtimePlan as never,
     });
 
     expect(resolveEmbeddedAgentStreamFnMock).toHaveBeenCalledWith(
@@ -284,7 +291,9 @@ describe("compactEmbeddedPiSessionDirect hooks", () => {
       }),
       "/tmp/workspace",
       undefined,
-      undefined,
+      expect.objectContaining({
+        preparedExtraParams: {},
+      }),
     );
   });
 
@@ -307,6 +316,29 @@ describe("compactEmbeddedPiSessionDirect hooks", () => {
         senderE164: "+15551234567",
       }),
     );
+  });
+
+  it("does not materialize compaction tools when the model cannot use tools", async () => {
+    resolveModelMock.mockReturnValue({
+      model: {
+        provider: "openai",
+        api: "responses",
+        id: "fake",
+        input: [],
+        compat: { supportsTools: false },
+      },
+      error: null,
+      authStorage: { setRuntimeApiKey: vi.fn() },
+      modelRegistry: {},
+    });
+
+    await compactEmbeddedPiSessionDirect({
+      sessionId: "session-1",
+      sessionFile: "/tmp/session.jsonl",
+      workspaceDir: "/tmp/workspace",
+    });
+
+    expect(createOpenClawCodingToolsMock).not.toHaveBeenCalled();
   });
 
   it("uses the session model fallback chain when implicit compaction fails", async () => {

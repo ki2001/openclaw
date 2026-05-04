@@ -103,7 +103,6 @@ const getReplyFromConfigRuntimeLoader = createLazyImportLoader(
 );
 const abortRuntimeLoader = createLazyImportLoader(() => import("./abort.runtime.js"));
 const ttsRuntimeLoader = createLazyImportLoader(() => import("../../tts/tts.runtime.js"));
-const runtimePluginsLoader = createLazyImportLoader(() => import("./runtime-plugins.runtime.js"));
 const replyMediaPathsRuntimeLoader = createLazyImportLoader(
   () => import("./reply-media-paths.runtime.js"),
 );
@@ -122,10 +121,6 @@ function loadAbortRuntime() {
 
 function loadTtsRuntime() {
   return ttsRuntimeLoader.load();
-}
-
-function loadRuntimePlugins() {
-  return runtimePluginsLoader.load();
 }
 
 function loadReplyMediaPathsRuntime() {
@@ -443,8 +438,6 @@ export async function dispatchReplyFromConfig(
   const inboundAudio = isInboundAudioContext(ctx);
   const sessionTtsAuto = normalizeTtsAutoMode(sessionStoreEntry.entry?.ttsAuto);
   const workspaceDir = resolveAgentWorkspaceDir(cfg, sessionAgentId);
-  const { ensureRuntimePluginsLoaded } = await loadRuntimePlugins();
-  ensureRuntimePluginsLoaded({ config: cfg, workspaceDir });
   const hookRunner = getGlobalHookRunner();
 
   // Extract message context for hooks (plugin and internal)

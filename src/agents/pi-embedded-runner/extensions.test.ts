@@ -7,8 +7,19 @@ import compactionSafeguardExtension from "../pi-hooks/compaction-safeguard.js";
 import contextPruningExtension from "../pi-hooks/context-pruning.js";
 import { buildEmbeddedExtensionFactories } from "./extensions.js";
 
+const providerRuntimeMocks = vi.hoisted(() => ({
+  resolveProviderCacheTtlEligibility: vi.fn(
+    (params: {
+      runtimeHandle?: {
+        plugin?: { isCacheTtlEligible?: (ctx: unknown) => boolean | undefined };
+      };
+      context: unknown;
+    }) => params.runtimeHandle?.plugin?.isCacheTtlEligible?.(params.context),
+  ),
+}));
+
 vi.mock("../../plugins/provider-runtime.js", () => ({
-  resolveProviderCacheTtlEligibility: () => undefined,
+  resolveProviderCacheTtlEligibility: providerRuntimeMocks.resolveProviderCacheTtlEligibility,
   resolveProviderRuntimePlugin: () => undefined,
 }));
 
@@ -116,5 +127,41 @@ describe("buildEmbeddedExtensionFactories", () => {
     });
 
     expect(factories).toContain(contextPruningExtension);
+  });
+
+  it("reuses the prepared provider runtime handle for cache-ttl eligibility", () => {
+    const factories = buildEmbeddedExtensionFactories({
+      cfg: {
+        agents: {
+          defaults: {
+            contextPruning: {
+              mode: "cache-ttl",
+            },
+          },
+        },
+      } as OpenClawConfig,
+      sessionManager: {} as SessionManager,
+      provider: "custom-cacheable",
+      modelId: "custom-model",
+      model: { api: "openai-compatible", contextWindow: 200_000 } as Model<Api>,
+      providerRuntimeHandle: {
+        provider: "custom-cacheable",
+        plugin: {
+          id: "custom-cacheable",
+          label: "Custom Cacheable",
+          auth: [],
+          isCacheTtlEligible: () => true,
+        },
+      },
+    });
+
+    expect(factories).toContain(contextPruningExtension);
+    expect(providerRuntimeMocks.resolveProviderCacheTtlEligibility).toHaveBeenCalledWith(
+      expect.objectContaining({
+        runtimeHandle: expect.objectContaining({
+          provider: "custom-cacheable",
+        }),
+      }),
+    );
   });
 });

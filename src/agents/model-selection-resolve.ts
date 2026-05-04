@@ -13,6 +13,7 @@ export {
   buildConfiguredAllowlistKeys,
   buildModelAliasIndex,
   normalizeModelSelection,
+  inferUniqueProviderFromConfiguredModels,
   resolveConfiguredModelRef,
   resolveHooksGmailModel,
   resolveModelRefFromString,

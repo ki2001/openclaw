@@ -9,7 +9,9 @@ import {
   isActiveUnusableWindow,
   isAuthCooldownBypassedForProvider,
   isProfileInCooldown,
+  resetUsageStats,
   resolveProfileUnusableUntil,
+  updateUsageStatsEntry,
 } from "./usage-state.js";
 export {
   clearExpiredCooldowns,
@@ -497,32 +499,6 @@ export function resolveProfileUnusableUntilForDisplay(
     return null;
   }
   return resolveProfileUnusableUntil(stats);
-}
-
-function resetUsageStats(
-  existing: ProfileUsageStats | undefined,
-  overrides?: Partial<ProfileUsageStats>,
-): ProfileUsageStats {
-  return {
-    ...existing,
-    errorCount: 0,
-    cooldownUntil: undefined,
-    cooldownReason: undefined,
-    cooldownModel: undefined,
-    disabledUntil: undefined,
-    disabledReason: undefined,
-    failureCounts: undefined,
-    ...overrides,
-  };
-}
-
-function updateUsageStatsEntry(
-  store: AuthProfileStore,
-  profileId: string,
-  updater: (existing: ProfileUsageStats | undefined) => ProfileUsageStats,
-): void {
-  store.usageStats = store.usageStats ?? {};
-  store.usageStats[profileId] = updater(store.usageStats[profileId]);
 }
 
 function keepActiveWindowOrRecompute(params: {

@@ -1,5 +1,6 @@
 import type { Api, Model } from "@mariozechner/pi-ai";
 import { beforeEach, describe, expect, it, vi, type Mock } from "vitest";
+import type { ProviderRuntimePluginHandle } from "../../../plugins/provider-hook-runtime.js";
 import type { AuthProfileStore } from "../../auth-profiles.js";
 import type { RuntimeAuthState } from "./helpers.js";
 
@@ -87,6 +88,7 @@ function createMutableAuthControllerHarness(): MutableAuthControllerHarness {
 function createMutableEmbeddedRunAuthController(params: {
   harness: MutableAuthControllerHarness;
   setRuntimeApiKey: RuntimeApiKeySetter;
+  providerRuntimeHandle?: ProviderRuntimePluginHandle;
   profileCandidates?: string[];
   warn?: (message: string) => void;
 }) {
@@ -99,6 +101,7 @@ function createMutableEmbeddedRunAuthController(params: {
       profiles: {},
     } as AuthProfileStore,
     authStorage: { setRuntimeApiKey: params.setRuntimeApiKey },
+    providerRuntimeHandle: params.providerRuntimeHandle,
     profileCandidates: params.profileCandidates ?? ["default"],
     initialThinkLevel: "medium",
     attemptedThinking: new Set(),
@@ -150,6 +153,7 @@ describe("createEmbeddedRunAuthController", () => {
   it("applies runtime request overrides on the first auth exchange", async () => {
     const harness = createMutableAuthControllerHarness();
     const setRuntimeApiKey = vi.fn<(provider: string, apiKey: string) => void>();
+    const providerRuntimeHandle: ProviderRuntimePluginHandle = { provider: "custom-openai" };
 
     mocks.getApiKeyForModel.mockResolvedValue({
       apiKey: "source-api-key",
@@ -172,6 +176,7 @@ describe("createEmbeddedRunAuthController", () => {
     const controller = createMutableEmbeddedRunAuthController({
       harness,
       setRuntimeApiKey,
+      providerRuntimeHandle,
     });
 
     await controller.initializeAuthProfile();
@@ -180,6 +185,11 @@ describe("createEmbeddedRunAuthController", () => {
       expect.objectContaining({
         agentDir: "/tmp/agent",
         workspaceDir: "/tmp/workspace",
+      }),
+    );
+    expect(mocks.prepareProviderRuntimeAuth).toHaveBeenCalledWith(
+      expect.objectContaining({
+        runtimeHandle: providerRuntimeHandle,
       }),
     );
     expect(harness.runtimeModel.baseUrl).toBe("https://runtime.example.com/v1");

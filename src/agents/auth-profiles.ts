@@ -16,7 +16,11 @@ export {
   type ExternalCliAuthDiscovery,
 } from "./auth-profiles/external-cli-discovery.js";
 export { resolveApiKeyForProfile } from "./auth-profiles/oauth.js";
-export { resolveAuthProfileEligibility, resolveAuthProfileOrder } from "./auth-profiles/order.js";
+export {
+  preferAuthProfileFirst,
+  resolveAuthProfileEligibility,
+  resolveAuthProfileOrder,
+} from "./auth-profiles/order.js";
 export {
   resolveAuthStatePathForDisplay,
   resolveAuthStorePathForDisplay,
@@ -25,6 +29,7 @@ export {
   dedupeProfileIds,
   listProfilesForProvider,
   markAuthProfileGood,
+  markAuthProfileSuccess,
   setAuthProfileOrder,
   upsertAuthProfile,
   upsertAuthProfileWithLock,

@@ -105,4 +105,27 @@ describe("ensureSkillSnapshot", () => {
     );
     expect(resolveAgentIdFromSessionKeyMock).not.toHaveBeenCalled();
   });
+
+  it("reuses persisted prompt snapshots without hydrating resolved skills", async () => {
+    const skillsSnapshot = {
+      prompt: "persisted skills prompt",
+      skills: [{ name: "diagnose" }],
+      version: 0,
+    };
+
+    const result = await ensureSkillSnapshot({
+      sessionKey: "main",
+      isFirstTurnInSession: false,
+      workspaceDir: "/tmp/workspace",
+      cfg: {},
+      sessionEntry: {
+        sessionId: "session-1",
+        updatedAt: Date.now(),
+        skillsSnapshot,
+      },
+    });
+
+    expect(result.skillsSnapshot).toBe(skillsSnapshot);
+    expect(buildWorkspaceSkillSnapshotMock).not.toHaveBeenCalled();
+  });
 });

@@ -29,6 +29,7 @@ import {
 import {
   buildEmbeddedSubscriptionParams,
   cleanupEmbeddedAttemptResources,
+  resolveEmbeddedSubscriptionFinalTag,
 } from "./attempt.subscription-cleanup.js";
 import type { MidTurnPrecheckRequest } from "./midturn-precheck.js";
 
@@ -135,6 +136,19 @@ describe("runEmbeddedAttempt context engine sessionKey forwarding", () => {
     await cleanupTempPaths(tempPaths);
     clearMemoryPluginState();
     vi.restoreAllMocks();
+  });
+
+  it("does not materialize coding tools when the model cannot use tools", async () => {
+    hoisted.supportsModelToolsMock.mockReturnValue(false);
+
+    await createContextEngineAttemptRunner({
+      contextEngine: createContextEngineBootstrapAndAssemble(),
+      sessionKey,
+      tempPaths,
+    });
+
+    expect(hoisted.supportsModelToolsMock).toHaveBeenCalled();
+    expect(hoisted.createOpenClawCodingToolsMock).not.toHaveBeenCalled();
   });
 
   it("sends transcriptPrompt visibly and queues runtime context as hidden custom context", async () => {
@@ -843,6 +857,22 @@ describe("runEmbeddedAttempt context engine sessionKey forwarding", () => {
 
     expect(params.silentExpected).toBe(true);
     expect(params.sessionKey).toBe(sessionKey);
+  });
+
+  it("resolves final-tag enforcement from prepared runtime hints", () => {
+    expect(
+      resolveEmbeddedSubscriptionFinalTag({
+        enforceFinalTag: undefined,
+        reasoningTagHint: true,
+      }),
+    ).toBe(true);
+    expect(
+      resolveEmbeddedSubscriptionFinalTag({
+        enforceFinalTag: true,
+        reasoningTagHint: false,
+        skipProviderRuntimeHints: true,
+      }),
+    ).toBe(false);
   });
 
   it("skips maintenance when afterTurn fails", async () => {

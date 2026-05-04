@@ -292,4 +292,44 @@ describe("loadEnabledBundlePiSettingsSnapshot", () => {
 
     expect(snapshot).toEqual({});
   });
+
+  it("reuses bundle settings for the same config snapshot but reloads a new config snapshot", async () => {
+    const workspaceDir = await tempDirs.make("openclaw-workspace-");
+    const pluginRoot = await createWorkspaceBundle({ workspaceDir });
+    const settingsPath = path.join(pluginRoot, "settings.json");
+    const cfg = {
+      plugins: {
+        entries: {
+          "claude-bundle": { enabled: true },
+        },
+      },
+    };
+    await fs.writeFile(settingsPath, JSON.stringify({ hideThinkingBlock: true }), "utf-8");
+
+    const first = loadEnabledBundlePiSettingsSnapshot({
+      cwd: workspaceDir,
+      cfg,
+    });
+    await fs.writeFile(settingsPath, JSON.stringify({ hideThinkingBlock: false }), "utf-8");
+    first.hideThinkingBlock = false;
+
+    expect(
+      loadEnabledBundlePiSettingsSnapshot({
+        cwd: workspaceDir,
+        cfg,
+      }).hideThinkingBlock,
+    ).toBe(true);
+    expect(
+      loadEnabledBundlePiSettingsSnapshot({
+        cwd: workspaceDir,
+        cfg: {
+          plugins: {
+            entries: {
+              "claude-bundle": { enabled: true },
+            },
+          },
+        },
+      }).hideThinkingBlock,
+    ).toBe(false);
+  });
 });

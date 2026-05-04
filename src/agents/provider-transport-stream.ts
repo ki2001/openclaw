@@ -1,6 +1,7 @@
 import type { StreamFn } from "@mariozechner/pi-agent-core";
 import type { Api, Model } from "@mariozechner/pi-ai";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
+import type { ProviderRuntimePluginHandle } from "../plugins/provider-hook-runtime.js";
 import { resolveProviderStreamFn } from "../plugins/provider-runtime.js";
 import { createAnthropicMessagesTransportStreamFn } from "./anthropic-transport-stream.js";
 import {
@@ -33,6 +34,7 @@ type ProviderTransportStreamContext = {
   agentDir?: string;
   workspaceDir?: string;
   env?: NodeJS.ProcessEnv;
+  providerRuntimeHandle?: ProviderRuntimePluginHandle;
 };
 
 function createProviderOwnedGoogleTransportStreamFn(
@@ -45,6 +47,7 @@ function createProviderOwnedGoogleTransportStreamFn(
       config: ctx?.cfg,
       workspaceDir: ctx?.workspaceDir,
       env: ctx?.env,
+      runtimeHandle: ctx?.providerRuntimeHandle,
       context: {
         config: ctx?.cfg,
         agentDir: ctx?.agentDir,

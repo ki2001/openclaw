@@ -26,7 +26,6 @@ const {
   buildEmbeddedRunBaseParams,
   buildEmbeddedRunContexts,
   resolveModelFallbackOptions,
-  resolveEnforceFinalTag,
   resolveProviderScopedAuthProfile,
 } = await import("./agent-runner-utils.js");
 
@@ -79,6 +78,8 @@ describe("agent-runner-utils", () => {
       provider: run.provider,
       model: run.model,
       agentDir: run.agentDir,
+      authStore: run.authProfileStore,
+      preflightAuthCooldown: false,
       fallbacksOverride: ["fallback-model"],
     });
   });
@@ -99,7 +100,7 @@ describe("agent-runner-utils", () => {
   });
 
   it("builds embedded run base params with auth profile and run metadata", () => {
-    const run = makeRun({ enforceFinalTag: true });
+    const run = makeRun({ enforceFinalTag: true, authProfileOrder: ["profile-openai"] });
     const authProfile = resolveProviderScopedAuthProfile({
       provider: "openai",
       primaryProvider: "openai",
@@ -116,6 +117,7 @@ describe("agent-runner-utils", () => {
     });
 
     expect(resolved).toMatchObject({
+      sessionId: run.sessionId,
       sessionFile: run.sessionFile,
       workspaceDir: run.workspaceDir,
       agentDir: run.agentDir,
@@ -127,6 +129,7 @@ describe("agent-runner-utils", () => {
       model: "gpt-4.1-mini",
       authProfileId: "profile-openai",
       authProfileIdSource: "user",
+      authProfileOrder: ["profile-openai"],
       thinkLevel: run.thinkLevel,
       verboseLevel: run.verboseLevel,
       reasoningLevel: run.reasoningLevel,
@@ -135,17 +138,27 @@ describe("agent-runner-utils", () => {
       timeoutMs: run.timeoutMs,
       runId: "run-1",
     });
+    expect(hoisted.isReasoningTagProviderMock).not.toHaveBeenCalled();
   });
 
-  it("does not force final-tag enforcement for minimax providers", () => {
-    const run = makeRun();
-
-    expect(resolveEnforceFinalTag(run, "minimax", "MiniMax-M2.7")).toBe(false);
-    expect(hoisted.isReasoningTagProviderMock).toHaveBeenCalledWith("minimax", {
-      config: run.config,
-      workspaceDir: run.workspaceDir,
-      modelId: "MiniMax-M2.7",
+  it("carries skipProviderRuntimeHints without resolving provider runtime hints", () => {
+    const run = makeRun({ enforceFinalTag: true, skipProviderRuntimeHints: true });
+    const authProfile = resolveProviderScopedAuthProfile({
+      provider: "openai",
+      primaryProvider: "openai",
     });
+
+    const resolved = buildEmbeddedRunBaseParams({
+      run,
+      provider: "minimax",
+      model: "MiniMax-M2.7",
+      runId: "run-1",
+      authProfile,
+    });
+
+    expect(resolved.enforceFinalTag).toBe(false);
+    expect(resolved.skipProviderRuntimeHints).toBe(true);
+    expect(hoisted.isReasoningTagProviderMock).not.toHaveBeenCalled();
   });
 
   it("builds embedded contexts and scopes auth profile by provider", () => {

@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import type { AgentToolResult } from "@mariozechner/pi-agent-core";
 import type { ExtensionFactory, SessionManager } from "@mariozechner/pi-coding-agent";
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
+import type { ProviderRuntimePluginHandle } from "../../plugins/provider-hook-runtime.js";
 import type { ProviderRuntimeModel } from "../../plugins/provider-runtime-model.types.js";
 import { resolveContextWindowInfo } from "../context-window-guard.js";
 import { DEFAULT_CONTEXT_TOKENS } from "../defaults.js";
@@ -90,12 +91,26 @@ function buildContextPruningFactory(params: {
   provider: string;
   modelId: string;
   model: ProviderRuntimeModel | undefined;
+  workspaceDir?: string;
+  env?: NodeJS.ProcessEnv;
+  providerRuntimeHandle?: ProviderRuntimePluginHandle;
+  cacheTtlProviderEligible?: boolean;
 }): ExtensionFactory | undefined {
   const raw = params.cfg?.agents?.defaults?.contextPruning;
   if (raw?.mode !== "cache-ttl") {
     return undefined;
   }
-  if (!isCacheTtlEligibleProvider(params.provider, params.modelId, params.model?.api)) {
+  if (
+    !(
+      params.cacheTtlProviderEligible ??
+      isCacheTtlEligibleProvider(params.provider, params.modelId, params.model?.api, {
+        config: params.cfg,
+        workspaceDir: params.workspaceDir,
+        env: params.env,
+        runtimeHandle: params.providerRuntimeHandle,
+      })
+    )
+  ) {
     return undefined;
   }
 
@@ -138,6 +153,10 @@ export function buildEmbeddedExtensionFactories(params: {
   provider: string;
   modelId: string;
   model: ProviderRuntimeModel | undefined;
+  workspaceDir?: string;
+  env?: NodeJS.ProcessEnv;
+  providerRuntimeHandle?: ProviderRuntimePluginHandle;
+  cacheTtlProviderEligible?: boolean;
 }): ExtensionFactory[] {
   const factories: ExtensionFactory[] = [];
   if (resolveCompactionMode(params.cfg) === "safeguard") {

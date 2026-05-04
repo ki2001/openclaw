@@ -34,3 +34,9 @@ export function resolveAttemptTranscriptPolicy(params: {
     })
   );
 }
+
+export function shouldPersistStrictTurnSessionRepair(
+  policy: Pick<TranscriptPolicy, "validateAnthropicTurns" | "validateGeminiTurns">,
+): boolean {
+  return policy.validateAnthropicTurns || policy.validateGeminiTurns;
+}
