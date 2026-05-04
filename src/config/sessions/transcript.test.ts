@@ -185,6 +185,40 @@ describe("appendAssistantMessageToSessionTranscript", () => {
     }
   });
 
+  it("serializes concurrent blocked user idempotency checks and appends", async () => {
+    writeTranscriptStore();
+
+    const results = await Promise.all(
+      Array.from({ length: 8 }, () =>
+        appendBlockedUserMessageToSessionTranscript({
+          sessionKey,
+          originalText: "secret prompt",
+          redactedText: "Blocked by policy.",
+          pluginId: "policy-plugin",
+          reason: "contains protected content",
+          idempotencyKey: "hook-block:concurrent-test-run",
+          storePath: fixture.storePath(),
+        }),
+      ),
+    );
+
+    expect(results.every((result) => result.ok)).toBe(true);
+    const messageIds = new Set(results.map((result) => (result.ok ? result.messageId : "failed")));
+    expect(messageIds.size).toBe(1);
+    const sessionFile = results.find((result) => result.ok)?.sessionFile;
+    if (!sessionFile) {
+      throw new Error("expected blocked append to return a session file");
+    }
+    const messageLines = fs
+      .readFileSync(sessionFile, "utf-8")
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line) as { type?: string; originalBlockedContent?: unknown })
+      .filter((record) => record.type === "message");
+    expect(messageLines).toHaveLength(1);
+    expect(messageLines[0]?.originalBlockedContent).toBeTruthy();
+  });
+
   it("emits blocked user inline updates without original content metadata", async () => {
     writeTranscriptStore();
     const emitSpy = vi.spyOn(transcriptEvents, "emitSessionTranscriptUpdate");

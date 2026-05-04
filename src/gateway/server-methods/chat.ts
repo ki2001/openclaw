@@ -79,7 +79,7 @@ import {
   cleanupManagedOutgoingImageRecords,
   createManagedOutgoingImageBlocks,
 } from "../managed-image-attachments.js";
-import { ADMIN_SCOPE } from "../method-scopes.js";
+import { ADMIN_SCOPE, WRITE_SCOPE } from "../method-scopes.js";
 import {
   GATEWAY_CLIENT_CAPS,
   GATEWAY_CLIENT_MODES,
@@ -762,7 +762,7 @@ function canInjectSystemProvenance(client: GatewayRequestHandlerOptions["client"
 
 function canIncludeBlockedOriginalContent(client: GatewayRequestHandlerOptions["client"]): boolean {
   const scopes = Array.isArray(client?.connect?.scopes) ? client.connect.scopes : [];
-  return scopes.includes(ADMIN_SCOPE);
+  return scopes.includes(ADMIN_SCOPE) || scopes.includes(WRITE_SCOPE);
 }
 
 async function persistChatSendImages(params: {

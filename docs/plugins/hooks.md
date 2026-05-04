@@ -241,6 +241,11 @@ model can read the prompt. `reason` is internal; `message` is the user-facing
 replacement. The only supported outcomes are `pass` and `block`; unsupported
 decision shapes fail closed.
 
+When a run is blocked, OpenClaw stores only the replacement in model-visible
+`message.content`. The human's original text is kept in blocked-content
+metadata for authorized write/admin history viewers so clients can show what
+the user typed with an "agent cannot read" notice.
+
 `before_agent_start` and `agent_end` include `event.runId` when OpenClaw can
 identify the active run. The same value is also available on `ctx.runId`.
 Cron-driven runs also expose `ctx.jobId` (the originating cron job id) so

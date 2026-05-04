@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { GlobalHookRunnerRegistry } from "./hook-registry.types.js";
 import type { PluginHookRegistration, PluginHookAgentContext } from "./hook-types.js";
 import { createHookRunner } from "./hooks.js";
@@ -19,6 +19,10 @@ const ctx: PluginHookAgentContext = {
 };
 
 describe("before_agent_run hook", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it("returns undefined when no handlers registered", async () => {
     const runner = createHookRunner(makeRegistry());
     const result = await runner.runBeforeAgentRun({ prompt: "hello", messages: [] }, ctx);
@@ -188,6 +192,26 @@ describe("before_agent_run hook", () => {
     await expect(runner.runBeforeAgentRun({ prompt: "test", messages: [] }, ctx)).rejects.toThrow(
       "before_agent_run handler from throwing-plugin failed: policy unavailable",
     );
+  });
+
+  it("fails closed when handlers exceed the default timeout", async () => {
+    vi.useFakeTimers();
+    const registry = makeRegistry([
+      {
+        pluginId: "hanging-plugin",
+        hookName: "before_agent_run",
+        handler: async () => await new Promise<never>(() => {}),
+        source: "test",
+      },
+    ]);
+    const runner = createHookRunner(registry);
+    const resultPromise = runner.runBeforeAgentRun({ prompt: "test", messages: [] }, ctx);
+    const rejection = expect(resultPromise).rejects.toThrow(
+      "before_agent_run handler from hanging-plugin failed: timed out after 15000ms",
+    );
+
+    await vi.advanceTimersByTimeAsync(15_000);
+    await rejection;
   });
 
   it("receives the correct event payload", async () => {

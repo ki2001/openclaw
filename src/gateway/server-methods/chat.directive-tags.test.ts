@@ -608,10 +608,10 @@ describe("chat directive tag stripping for non-streaming final payloads", () => 
     expect(
       (
         writeScoped.messages?.[0] as {
-          __openclaw?: { originalBlockedContent?: unknown };
+          __openclaw?: { originalBlockedContent?: { content?: Array<{ text?: string }> } };
         }
-      )?.__openclaw?.originalBlockedContent,
-    ).toBeUndefined();
+      )?.__openclaw?.originalBlockedContent?.content?.[0]?.text,
+    ).toBe("secret blocked prompt");
 
     const unscoped = await runChatHistory({
       client: createScopedCliClient(["operator.read"]),

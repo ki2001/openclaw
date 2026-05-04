@@ -235,13 +235,13 @@ export class SessionHistorySseState {
       return null;
     }
     this.rawTranscriptSeq += 1;
-    const nextMessage = attachOpenClawTranscriptMeta(
-      stripBlockedOriginalContentMeta(update.message),
-      {
-        ...(typeof update.messageId === "string" ? { id: update.messageId } : {}),
-        seq: this.rawTranscriptSeq,
-      },
-    );
+    const projectedMessage = this.includeBlockedOriginalContent
+      ? update.message
+      : stripBlockedOriginalContentMeta(update.message);
+    const nextMessage = attachOpenClawTranscriptMeta(projectedMessage, {
+      ...(typeof update.messageId === "string" ? { id: update.messageId } : {}),
+      seq: this.rawTranscriptSeq,
+    });
     const [sanitizedMessage] = toSessionHistoryMessages(
       projectChatDisplayMessages([nextMessage], { maxChars: this.maxChars }),
     );

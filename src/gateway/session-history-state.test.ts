@@ -319,4 +319,33 @@ describe("SessionHistorySseState", () => {
       { type: "text", text: "The agent cannot read this message." },
     ]);
   });
+
+  test("keeps blocked original content for authorized inline SSE messages", () => {
+    const state = SessionHistorySseState.fromRawSnapshot({
+      target: { sessionId: "sess-main" },
+      rawMessages: [],
+      includeBlockedOriginalContent: true,
+    });
+
+    const appended = state.appendInlineMessage({
+      message: {
+        role: "user",
+        content: [{ type: "text", text: "The agent cannot read this message." }],
+        __openclaw: {
+          originalBlockedContent: {
+            content: [{ type: "text", text: "secret blocked prompt" }],
+          },
+        },
+      },
+      messageId: "blocked-1",
+    });
+
+    expect(
+      (
+        appended?.message as {
+          __openclaw?: { originalBlockedContent?: { content?: Array<{ text?: string }> } };
+        }
+      ).__openclaw?.originalBlockedContent?.content?.[0]?.text,
+    ).toBe("secret blocked prompt");
+  });
 });

@@ -186,6 +186,7 @@ const DEFAULT_VOID_HOOK_TIMEOUT_MS_BY_HOOK: Partial<Record<PluginHookName, numbe
   agent_end: 30_000,
 };
 const DEFAULT_MODIFYING_HOOK_TIMEOUT_MS_BY_HOOK: Partial<Record<PluginHookName, number>> = {
+  before_agent_run: 15_000,
   before_prompt_build: 15_000,
 };
 

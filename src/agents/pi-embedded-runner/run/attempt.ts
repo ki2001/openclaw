@@ -2717,11 +2717,6 @@ export async function runEmbeddedAttempt(
           `embedded run prompt start: runId=${params.runId} sessionId=${params.sessionId} ` +
             routingSummary,
         );
-        cacheTrace?.recordStage("prompt:before", {
-          prompt: effectivePrompt,
-          messages: activeSession.messages,
-        });
-
         // Repair orphaned trailing user messages so new prompts don't violate role ordering.
         const leafEntry = isRawModelRun ? null : sessionManager.getLeafEntry();
         if (leafEntry?.type === "message" && leafEntry.message.role === "user") {
