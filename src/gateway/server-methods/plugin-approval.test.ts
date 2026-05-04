@@ -163,7 +163,50 @@ describe("createPluginApprovalHandlers", () => {
       await handlerPromise;
     });
 
-    it("preserves explicit empty allowed decisions on plugin approval requests", async () => {
+    it("keeps deny available on restricted plugin approval requests", async () => {
+      const handlers = createPluginApprovalHandlers(manager);
+      const respond = vi.fn();
+      const opts = createMockOptions(
+        "plugin.approval.request",
+        {
+          title: "Sensitive action",
+          description: "This tool modifies production data",
+          severity: "warning",
+          allowedDecisions: ["allow-once"],
+          twoPhase: true,
+        },
+        { respond },
+      );
+
+      const handlerPromise = handlers["plugin.approval.request"](opts);
+
+      await vi.waitFor(() => {
+        expect(opts.context.broadcast).toHaveBeenCalledWith(
+          "plugin.approval.requested",
+          expect.objectContaining({
+            request: expect.objectContaining({
+              allowedDecisions: ["allow-once", "deny"],
+            }),
+          }),
+          { dropIfSlow: true },
+        );
+      });
+
+      const acceptedCall = respond.mock.calls.find(
+        (c) => (c[1] as Record<string, unknown>)?.status === "accepted",
+      );
+      const approvalId = (acceptedCall?.[1] as Record<string, unknown>)?.id as string;
+      manager.resolve(approvalId, "deny");
+
+      await handlerPromise;
+      expect(respond).toHaveBeenLastCalledWith(
+        true,
+        expect.objectContaining({ id: approvalId, decision: "deny" }),
+        undefined,
+      );
+    });
+
+    it("rejects explicit empty allowed decisions on plugin approval requests", async () => {
       const handlers = createPluginApprovalHandlers(manager);
       const respond = vi.fn();
       const opts = createMockOptions(
@@ -178,27 +221,47 @@ describe("createPluginApprovalHandlers", () => {
         { respond },
       );
 
-      const handlerPromise = handlers["plugin.approval.request"](opts);
+      await handlers["plugin.approval.request"](opts);
 
-      await vi.waitFor(() => {
-        expect(opts.context.broadcast).toHaveBeenCalledWith(
-          "plugin.approval.requested",
-          expect.objectContaining({
-            request: expect.objectContaining({
-              allowedDecisions: [],
-            }),
-          }),
-          { dropIfSlow: true },
-        );
-      });
-
-      const acceptedCall = respond.mock.calls.find(
-        (c) => (c[1] as Record<string, unknown>)?.status === "accepted",
+      expect(respond).toHaveBeenCalledWith(
+        false,
+        undefined,
+        expect.objectContaining({
+          code: "INVALID_REQUEST",
+          message: "allowedDecisions must include at least one supported decision",
+        }),
       );
-      const approvalId = (acceptedCall?.[1] as Record<string, unknown>)?.id as string;
-      manager.resolve(approvalId, "deny");
+      expect(opts.context.broadcast).not.toHaveBeenCalledWith(
+        "plugin.approval.requested",
+        expect.anything(),
+        expect.anything(),
+      );
+    });
 
-      await handlerPromise;
+    it("rejects invalid-only allowed decisions on plugin approval requests", async () => {
+      const handlers = createPluginApprovalHandlers(manager);
+      const respond = vi.fn();
+      const opts = createMockOptions(
+        "plugin.approval.request",
+        {
+          title: "Sensitive action",
+          description: "This tool modifies production data",
+          severity: "warning",
+          allowedDecisions: ["forever"],
+        },
+        { respond },
+      );
+
+      await handlers["plugin.approval.request"](opts);
+
+      expect(respond).toHaveBeenCalledWith(
+        false,
+        undefined,
+        expect.objectContaining({
+          code: "INVALID_REQUEST",
+          message: expect.stringContaining("invalid plugin.approval.request params"),
+        }),
+      );
     });
 
     it("expires immediately when no approval route", async () => {

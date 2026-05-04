@@ -22,6 +22,10 @@ describe("HookDecision helpers", () => {
       expect(isHookDecision({ block: true })).toBe(false);
       expect(isHookDecision({ outcome: "ask", reason: "check" })).toBe(false);
       expect(isHookDecision({ outcome: "invalid" })).toBe(false);
+      expect(isHookDecision({ outcome: "block" })).toBe(false);
+      expect(isHookDecision({ outcome: "block", reason: "" })).toBe(false);
+      expect(isHookDecision({ outcome: "block", reason: "policy", message: "" })).toBe(false);
+      expect(isHookDecision({ outcome: "block", reason: "policy", message: 3 })).toBe(false);
     });
   });
 
@@ -57,6 +61,7 @@ describe("HookDecision helpers", () => {
 
       expect(resolveBlockMessage(explicit)).toBe("Please rephrase your request.");
       expect(resolveBlockMessage(fallback)).toBe(DEFAULT_BLOCK_MESSAGE);
+      expect(resolveBlockMessage({ ...explicit, message: "   " })).toBe(DEFAULT_BLOCK_MESSAGE);
     });
   });
 });

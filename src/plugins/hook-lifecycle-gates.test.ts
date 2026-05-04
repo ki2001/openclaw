@@ -153,6 +153,26 @@ describe("before_agent_run hook", () => {
     });
   });
 
+  it("fails closed on malformed block decisions", async () => {
+    const registry = makeRegistry([
+      {
+        pluginId: "malformed-block-plugin",
+        hookName: "before_agent_run",
+        handler: async () => ({ outcome: "block" }) as never,
+        source: "test",
+      },
+    ]);
+    const runner = createHookRunner(registry);
+    const result = await runner.runBeforeAgentRun({ prompt: "test", messages: [] }, ctx);
+    expect(result).toEqual({
+      decision: {
+        outcome: "block",
+        reason: "before_agent_run returned an invalid decision",
+      },
+      pluginId: "malformed-block-plugin",
+    });
+  });
+
   it("receives the correct event payload", async () => {
     let receivedEvent: unknown;
     const registry = makeRegistry([

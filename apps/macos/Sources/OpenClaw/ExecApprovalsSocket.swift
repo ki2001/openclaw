@@ -241,7 +241,9 @@ enum ExecApprovalsPromptPresenter {
             alert.addButton(withTitle: self.buttonTitle(decision))
         }
         if #available(macOS 11.0, *) {
-            for (index, decision) in decisions.enumerated() where decision == .deny && alert.buttons.indices.contains(index) {
+            for (index, decision) in decisions.enumerated()
+                where decision == .deny && alert.buttons.indices.contains(index)
+            {
                 alert.buttons[index].hasDestructiveAction = true
             }
         }
@@ -264,11 +266,11 @@ enum ExecApprovalsPromptPresenter {
     private static func buttonTitle(_ decision: ExecApprovalDecision) -> String {
         switch decision {
         case .allowOnce:
-            return "Allow Once"
+            "Allow Once"
         case .allowAlways:
-            return "Always Allow"
+            "Always Allow"
         case .deny:
-            return "Don't Allow"
+            "Don't Allow"
         }
     }
 

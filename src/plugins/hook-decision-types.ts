@@ -29,7 +29,9 @@ export type HookDecisionBlock = {
 };
 
 export function resolveBlockMessage(decision: HookDecisionBlock): string {
-  return decision.message ?? DEFAULT_BLOCK_MESSAGE;
+  return typeof decision.message === "string" && decision.message.trim()
+    ? decision.message
+    : DEFAULT_BLOCK_MESSAGE;
 }
 
 /** Outcome severity for most-restrictive-wins merging. Higher = more restrictive. */
@@ -57,7 +59,19 @@ export function isHookDecision(value: unknown): value is HookDecision {
     return false;
   }
   const v = value as Record<string, unknown>;
-  return v.outcome === "pass" || v.outcome === "block";
+  if (v.outcome === "pass") {
+    return true;
+  }
+  if (v.outcome !== "block") {
+    return false;
+  }
+  if (typeof v.reason !== "string" || !v.reason.trim()) {
+    return false;
+  }
+  if ("message" in v && (typeof v.message !== "string" || !v.message.trim())) {
+    return false;
+  }
+  return true;
 }
 
 /** Outcomes valid for input gates (before_agent_run). */

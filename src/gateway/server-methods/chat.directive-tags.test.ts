@@ -581,7 +581,7 @@ describe("chat directive tag stripping for non-streaming final payloads", () => 
     );
 
     const scoped = await runChatHistory({
-      client: createScopedCliClient(["operator.write"]),
+      client: createScopedCliClient(["operator.admin"]),
       requestParams: { includeBlockedOriginalContent: true },
     });
     expect(
@@ -591,6 +591,18 @@ describe("chat directive tag stripping for non-streaming final payloads", () => 
         }
       )?.__openclaw?.originalBlockedContent?.content?.[0]?.text,
     ).toBe("secret blocked prompt");
+
+    const writeScoped = await runChatHistory({
+      client: createScopedCliClient(["operator.write"]),
+      requestParams: { includeBlockedOriginalContent: true },
+    });
+    expect(
+      (
+        writeScoped.messages?.[0] as {
+          __openclaw?: { originalBlockedContent?: unknown };
+        }
+      )?.__openclaw?.originalBlockedContent,
+    ).toBeUndefined();
 
     const unscoped = await runChatHistory({
       client: createScopedCliClient(["operator.read"]),

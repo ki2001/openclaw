@@ -87,6 +87,21 @@ export function createPluginApprovalHandlers(
       const allowedDecisions = hasExplicitAllowedDecisions
         ? rawAllowedDecisions.filter(isApprovalDecision)
         : [];
+      if (hasExplicitAllowedDecisions && allowedDecisions.length === 0) {
+        respond(
+          false,
+          undefined,
+          errorShape(
+            ErrorCodes.INVALID_REQUEST,
+            "allowedDecisions must include at least one supported decision",
+          ),
+        );
+        return;
+      }
+      const effectiveAllowedDecisions =
+        hasExplicitAllowedDecisions && !allowedDecisions.includes("deny")
+          ? [...allowedDecisions, "deny" as const]
+          : allowedDecisions;
 
       const request: PluginApprovalRequestPayload = {
         pluginId: p.pluginId ?? null,
@@ -101,7 +116,7 @@ export function createPluginApprovalHandlers(
         turnSourceTo: normalizeTrimmedString(p.turnSourceTo),
         turnSourceAccountId: normalizeTrimmedString(p.turnSourceAccountId),
         turnSourceThreadId: p.turnSourceThreadId ?? null,
-        ...(hasExplicitAllowedDecisions ? { allowedDecisions } : {}),
+        ...(hasExplicitAllowedDecisions ? { allowedDecisions: effectiveAllowedDecisions } : {}),
       };
 
       // Always server-generate the ID — never accept plugin-provided IDs.
