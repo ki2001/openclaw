@@ -69,6 +69,7 @@ const mockState = vi.hoisted(() => ({
   sandboxWorkspace: null as { workspaceDir: string; containerWorkdir?: string } | null,
   stageSandboxMediaError: null as Error | null,
   stagedRelativePaths: null as string[] | null,
+  hasBeforeAgentRunHooks: false,
   // `unstagedSources` lets tests simulate partial staging failure: absolute
   // source paths listed here are excluded from the returned `staged` map even
   // though ctx still carries their rewritten paths. This mirrors how the real
@@ -211,6 +212,13 @@ vi.mock("../../infra/outbound/session-binding-service.js", async () => {
     }),
   };
 });
+
+vi.mock("../../plugins/hook-runner-global.js", () => ({
+  getGlobalHookRunner: () => ({
+    hasHooks: (hookName: string) =>
+      hookName === "before_agent_run" && mockState.hasBeforeAgentRunHooks,
+  }),
+}));
 
 vi.mock("../../sessions/transcript-events.js", () => ({
   emitSessionTranscriptUpdate: vi.fn(
@@ -544,6 +552,7 @@ describe("chat directive tag stripping for non-streaming final payloads", () => 
     mockState.stagedRelativePaths = null;
     mockState.unstagedSources = null;
     mockState.deleteMediaBufferCalls = [];
+    mockState.hasBeforeAgentRunHooks = false;
   });
 
   it("includes blocked original content for scoped chat history callers", async () => {
@@ -2126,6 +2135,31 @@ describe("chat directive tag stripping for non-streaming final payloads", () => 
       context.broadcast as unknown as ReturnType<typeof vi.fn>
     ).mock.calls.find((call) => call[0] === "chat" && call[1]?.state === "final")?.[1];
     expect(finalBroadcast).toBeUndefined();
+  });
+
+  it("does not emit pre-gate user transcript content when before_agent_run hooks are registered", async () => {
+    createTranscriptFixture("openclaw-chat-send-user-transcript-before-run-gate-");
+    mockState.finalText = "ok";
+    mockState.triggerAgentRunStart = true;
+    mockState.hasBeforeAgentRunHooks = true;
+    const respond = vi.fn();
+    const context = createChatContext();
+
+    await runNonStreamingChatSend({
+      context,
+      respond,
+      idempotencyKey: "idem-user-transcript-before-run-gate",
+      message: "secret prompt that may be blocked",
+      expectBroadcast: false,
+    });
+
+    const userUpdate = mockState.emittedTranscriptUpdates.find(
+      (update) =>
+        typeof update.message === "object" &&
+        update.message !== null &&
+        (update.message as { role?: unknown }).role === "user",
+    );
+    expect(userUpdate).toBeUndefined();
   });
 
   it("adds persisted media paths to the user transcript update", async () => {

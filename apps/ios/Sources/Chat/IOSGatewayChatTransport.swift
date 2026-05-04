@@ -54,8 +54,11 @@ struct IOSGatewayChatTransport: OpenClawChatTransport {
     }
 
     func requestHistory(sessionKey: String) async throws -> OpenClawChatHistoryPayload {
-        struct Params: Codable { var sessionKey: String }
-        let data = try JSONEncoder().encode(Params(sessionKey: sessionKey))
+        struct Params: Codable {
+            var sessionKey: String
+            var includeBlockedOriginalContent: Bool
+        }
+        let data = try JSONEncoder().encode(Params(sessionKey: sessionKey, includeBlockedOriginalContent: true))
         let json = String(data: data, encoding: .utf8)
         let res = try await self.gateway.request(method: "chat.history", paramsJSON: json, timeoutSeconds: 15)
         return try JSONDecoder().decode(OpenClawChatHistoryPayload.self, from: res)

@@ -300,7 +300,8 @@ class ChatController(
         session.sendNodeEvent("chat.subscribe", """{"sessionKey":"$key"}""")
       }
 
-      val historyJson = session.request("chat.history", """{"sessionKey":"$key"}""")
+      val historyJson =
+        session.request("chat.history", """{"sessionKey":"$key","includeBlockedOriginalContent":true}""")
       val history = parseHistory(historyJson, sessionKey = key, previousMessages = _messages.value)
       _messages.value = history.messages
       _sessionId.value = history.sessionId
@@ -376,7 +377,10 @@ class ChatController(
         scope.launch {
           try {
             val historyJson =
-              session.request("chat.history", """{"sessionKey":"${_sessionKey.value}"}""")
+              session.request(
+                "chat.history",
+                """{"sessionKey":"${_sessionKey.value}","includeBlockedOriginalContent":true}""",
+              )
             val history = parseHistory(historyJson, sessionKey = _sessionKey.value, previousMessages = _messages.value)
             _messages.value = history.messages
             _sessionId.value = history.sessionId
@@ -509,11 +513,21 @@ class ChatController(
         val obj = item.asObjectOrNull() ?: return@mapNotNull null
         val role = obj["role"].asStringOrNull() ?: return@mapNotNull null
         val content = obj["content"].asArrayOrNull()?.mapNotNull(::parseMessageContent) ?: emptyList()
+        val originalBlockedContent =
+          obj["__openclaw"]
+            .asObjectOrNull()
+            ?.get("originalBlockedContent")
+            .asObjectOrNull()
+            ?.get("content")
+            .asArrayOrNull()
+            ?.mapNotNull(::parseMessageContent)
+            ?: emptyList()
         val ts = obj["timestamp"].asLongOrNull()
         ChatMessage(
           id = UUID.randomUUID().toString(),
           role = role,
           content = content,
+          originalBlockedContent = originalBlockedContent,
           timestampMs = ts,
         )
       }
@@ -641,9 +655,16 @@ internal fun messageIdentityKey(message: ChatMessage): String? {
           .orEmpty(),
       ).joinToString(separator = "\u001F")
     }
+  val blockedFingerprint =
+    message.originalBlockedContent.joinToString(separator = "\u001E") { part ->
+      listOf(
+        part.type.trim().lowercase(),
+        part.text?.trim().orEmpty(),
+      ).joinToString(separator = "\u001F")
+    }
 
   if (timestamp.isEmpty() && contentFingerprint.isEmpty()) return null
-  return listOf(role, timestamp, contentFingerprint).joinToString(separator = "|")
+  return listOf(role, timestamp, contentFingerprint, blockedFingerprint).joinToString(separator = "|")
 }
 
 private fun JsonElement?.asObjectOrNull(): JsonObject? = this as? JsonObject

@@ -281,11 +281,27 @@ public final class OpenClawChatViewModel {
                 name: content.name,
                 arguments: content.arguments)
         }
+        let sanitizedOriginalBlockedContent = message.originalBlockedContent?.map { content -> OpenClawChatMessageContent in
+            guard let text = content.text else { return content }
+            let cleaned = ChatMarkdownPreprocessor.preprocess(markdown: text).cleaned
+            return OpenClawChatMessageContent(
+                type: content.type,
+                text: cleaned,
+                thinking: content.thinking,
+                thinkingSignature: content.thinkingSignature,
+                mimeType: content.mimeType,
+                fileName: content.fileName,
+                content: content.content,
+                id: content.id,
+                name: content.name,
+                arguments: content.arguments)
+        }
 
         return OpenClawChatMessage(
             id: message.id,
             role: message.role,
             content: sanitizedContent,
+            originalBlockedContent: sanitizedOriginalBlockedContent,
             timestamp: message.timestamp,
             toolCallId: message.toolCallId,
             toolName: message.toolName,
@@ -294,7 +310,7 @@ public final class OpenClawChatViewModel {
     }
 
     private static func messageContentFingerprint(for message: OpenClawChatMessage) -> String {
-        message.content.map { item in
+        let contentFingerprint = message.content.map { item in
             let type = (item.type ?? "text").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
             let text = (item.text ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
             let id = (item.id ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
@@ -302,6 +318,12 @@ public final class OpenClawChatViewModel {
             let fileName = (item.fileName ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
             return [type, text, id, name, fileName].joined(separator: "\\u{001F}")
         }.joined(separator: "\\u{001E}")
+        let originalBlockedFingerprint = (message.originalBlockedContent ?? []).map { item in
+            let type = (item.type ?? "text").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            let text = (item.text ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            return [type, text].joined(separator: "\\u{001F}")
+        }.joined(separator: "\\u{001E}")
+        return [contentFingerprint, originalBlockedFingerprint].joined(separator: "\\u{001D}")
     }
 
     private static func messageIdentityKey(for message: OpenClawChatMessage) -> String? {
@@ -365,6 +387,7 @@ public final class OpenClawChatViewModel {
                 id: reusedId,
                 role: message.role,
                 content: message.content,
+                originalBlockedContent: message.originalBlockedContent,
                 timestamp: message.timestamp,
                 toolCallId: message.toolCallId,
                 toolName: message.toolName,

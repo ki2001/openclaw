@@ -35,6 +35,7 @@ import {
 } from "../../media/store.js";
 import { createChannelReplyPipeline } from "../../plugin-sdk/channel-reply-pipeline.js";
 import { isPluginOwnedSessionBindingRecord } from "../../plugins/conversation-binding.js";
+import { getGlobalHookRunner } from "../../plugins/hook-runner-global.js";
 import { normalizeInputProvenance, type InputProvenance } from "../../sessions/input-provenance.js";
 import { resolveSendPolicy } from "../../sessions/send-policy.js";
 import { parseAgentSessionKey } from "../../sessions/session-key-utils.js";
@@ -2428,16 +2429,8 @@ export const chatHandlers: GatewayRequestHandlers = {
         },
       });
 
-      // Surface accepted inbound turns immediately so transcript subscribers
-      // (gateway watchers, MCP bridges, external channel backends) do not wait
-      // on model startup, completion, or failure paths before seeing the user turn.
-      void emitUserTranscriptUpdate().catch((transcriptErr) => {
-        context.logGateway.warn(
-          `webchat eager user transcript update failed: ${formatForLog(transcriptErr)}`,
-        );
-      });
-
       let agentRunStarted = false;
+      const hasBeforeAgentRunGate = getGlobalHookRunner()?.hasHooks("before_agent_run") === true;
       void dispatchInboundMessage({
         ctx,
         cfg,
@@ -2449,7 +2442,9 @@ export const chatHandlers: GatewayRequestHandlers = {
           imageOrder: imageOrder.length > 0 ? imageOrder : undefined,
           onAgentRunStart: (runId) => {
             agentRunStarted = true;
-            void emitUserTranscriptUpdate();
+            if (!hasBeforeAgentRunGate) {
+              void emitUserTranscriptUpdate();
+            }
             const connId = typeof client?.connId === "string" ? client.connId : undefined;
             const wantsToolEvents = hasGatewayClientCap(
               client?.connect?.caps,
@@ -2644,7 +2639,9 @@ export const chatHandlers: GatewayRequestHandlers = {
               });
             }
           } else {
-            void emitUserTranscriptUpdate();
+            if (!hasBeforeAgentRunGate) {
+              void emitUserTranscriptUpdate();
+            }
           }
           if (!context.chatAbortedRuns.has(clientRunId)) {
             setGatewayDedupeEntry({
@@ -2664,11 +2661,13 @@ export const chatHandlers: GatewayRequestHandlers = {
               `webchat transcript media rewrite failed after error: ${formatForLog(rewriteErr)}`,
             );
           });
-          void emitUserTranscriptUpdate().catch((transcriptErr) => {
-            context.logGateway.warn(
-              `webchat user transcript update failed after error: ${formatForLog(transcriptErr)}`,
-            );
-          });
+          if (!agentRunStarted || !hasBeforeAgentRunGate) {
+            void emitUserTranscriptUpdate().catch((transcriptErr) => {
+              context.logGateway.warn(
+                `webchat user transcript update failed after error: ${formatForLog(transcriptErr)}`,
+              );
+            });
+          }
           const error = errorShape(ErrorCodes.UNAVAILABLE, String(err));
           setGatewayDedupeEntry({
             dedupe: context.dedupe,
